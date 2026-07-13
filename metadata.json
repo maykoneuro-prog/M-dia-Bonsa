@@ -1,0 +1,6 @@
+{
+  "name": "Boletim Digital Bom Samaritano",
+  "description": "Aplicativo de projeção de letras estilo Holyrics com suporte a Chromecast e acompanhamento em tempo real nos celulares.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

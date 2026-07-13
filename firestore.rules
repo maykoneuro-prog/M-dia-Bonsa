@@ -1,0 +1,85 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Global Safety Net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Helper functions
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    // Validation for Song entity
+    function isValidSong(data) {
+      return data.keys().hasAll(['title', 'artist', 'slides'])
+        && data.title is string && data.title.size() <= 200
+        && data.artist is string && data.artist.size() <= 200
+        && data.slides is list
+        && (!('createdAt' in data) || data.createdAt == request.time);
+    }
+
+    // Validation for Room entity
+    function isValidRoom(data) {
+      return data.keys().hasAll(['id', 'name', 'activeSongId', 'activeSlideIndex', 'isBlackout', 'isClearText'])
+        && data.id is string && data.id.size() <= 50
+        && data.name is string && data.name.size() <= 100
+        && (data.activeSongId == null || data.activeSongId is string)
+        && data.activeSlideIndex is int
+        && data.isBlackout is bool
+        && data.isClearText is bool
+        && (!('updatedAt' in data) || data.updatedAt == request.time);
+    }
+
+    // Validation for Service entity
+    function isValidService(data) {
+      return data.keys().hasAll(['id', 'roomId', 'title', 'date', 'isActive', 'items'])
+        && data.id is string
+        && data.roomId is string
+        && data.title is string && data.title.size() <= 200
+        && data.date is string
+        && data.isActive is bool
+        && data.items is list;
+    }
+
+    // Songs collection rules
+    match /songs/{songId} {
+      allow get: if isValidId(songId);
+      allow list: if true;
+      
+      allow create: if isValidId(songId) && isValidSong(incoming());
+      allow update: if isValidId(songId) && isValidSong(incoming());
+      allow delete: if isValidId(songId);
+    }
+
+    // Rooms collection rules
+    match /rooms/{roomId} {
+      allow get: if isValidId(roomId);
+      allow list: if true;
+      
+      allow create: if isValidId(roomId) && isValidRoom(incoming());
+      allow update: if isValidId(roomId) && isValidRoom(incoming());
+      allow delete: if isValidId(roomId);
+    }
+
+    // Services collection rules
+    match /services/{serviceId} {
+      allow get: if isValidId(serviceId);
+      allow list: if true;
+      
+      allow create: if isValidId(serviceId) && isValidService(incoming());
+      allow update: if isValidId(serviceId) && isValidService(incoming());
+      allow delete: if isValidId(serviceId);
+    }
+  }
+}

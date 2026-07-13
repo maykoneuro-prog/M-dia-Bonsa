@@ -1,0 +1,62 @@
+{
+  "entities": {
+    "Song": {
+      "title": "Song",
+      "description": "Represents a synchronized praise song with slides",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "artist": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "slides": {
+          "type": "array",
+          "description": "List of slides making up the song lyrics"
+        },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["title", "artist", "slides"]
+    },
+    "Room": {
+      "title": "Room",
+      "description": "A real-time sync church room session",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "pattern": "^[A-Z0-9_-]+$" },
+        "name": { "type": "string", "minLength": 1, "maxLength": 100 },
+        "activeSongId": { "type": "string" },
+        "activeSlideIndex": { "type": "number" },
+        "isBlackout": { "type": "boolean" },
+        "isClearText": { "type": "boolean" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "name", "activeSongId", "activeSlideIndex", "isBlackout", "isClearText"]
+    },
+    "Service": {
+      "title": "Service",
+      "description": "A liturgical worship service schedule",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "roomId": { "type": "string" },
+        "title": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "date": { "type": "string" },
+        "isActive": { "type": "boolean" },
+        "items": { "type": "array" }
+      },
+      "required": ["id", "roomId", "title", "date", "isActive", "items"]
+    }
+  },
+  "firestore": {
+    "songs/{songId}": {
+      "schema": "Song",
+      "description": "Library of praise songs"
+    },
+    "rooms/{roomId}": {
+      "schema": "Room",
+      "description": "Active sync rooms"
+    },
+    "services/{serviceId}": {
+      "schema": "Service",
+      "description": "Liturgical worship service plans and schedules"
+    }
+  }
+}

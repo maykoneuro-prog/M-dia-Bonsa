@@ -1,0 +1,18 @@
+{
+  "name": "Boletim Digital Bom Samaritano",
+  "short_name": "Bom Samaritano",
+  "description": "Aplicativo da Paróquia Bom Samaritano - Letras, Bíblia e Projeção",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#FDFBF7",
+  "theme_color": "#3C5245",
+  "icons": [
+    {
+      "src": "/church_pwa_icon.jpg",
+      "sizes": "512x512",
+      "type": "image/jpeg",
+      "purpose": "any maskable"
+    }
+  ]
+}

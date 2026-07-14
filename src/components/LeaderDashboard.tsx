@@ -25,7 +25,9 @@ import {
   Megaphone,
   Edit3,
   BookOpen,
-  HeartHandshake
+  HeartHandshake,
+  Maximize2,
+  Minimize2
 } from "lucide-react";
 import { Song, Slide, Room, Service, ServiceItem, LITURGY_CATEGORIES, Announcement } from "../types";
 import { 
@@ -222,6 +224,7 @@ export default function LeaderDashboard({ room, onDisconnect }: LeaderDashboardP
   // --- PRESENTER / TABLET NAVIGATION STATES & SELECTORS ---
   const [isPresenterModeOpen, setIsPresenterModeOpen] = useState(false);
   const [isOnline, setIsOnline] = useState(navigator.onLine);
+  const [isPresenterCompact, setIsPresenterCompact] = useState(false);
 
   useEffect(() => {
     const handleOnline = () => setIsOnline(true);
@@ -2658,59 +2661,137 @@ export default function LeaderDashboard({ room, onDisconnect }: LeaderDashboardP
         <div className="fixed inset-0 bg-[#0D0B21] text-[#FDFBF7] z-50 flex flex-col p-4 sm:p-6 select-none animate-fade-in font-sans">
           
           {/* Header Controls */}
-          <div className="relative z-20 flex justify-between items-center bg-white/5 border border-white/10 p-4 rounded-2xl backdrop-blur-md mb-6">
-            <div className="flex items-center space-x-3">
-              <span className="flex h-3 w-3 relative">
-                <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${isOnline ? "bg-emerald-400" : "bg-amber-400"}`}></span>
-                <span className={`relative inline-flex rounded-full h-3 w-3 ${isOnline ? "bg-emerald-500" : "bg-amber-500"}`}></span>
-              </span>
-              <div>
-                <h4 className={`text-xs font-mono font-bold uppercase tracking-wider ${isOnline ? "text-emerald-400" : "text-amber-400 animate-pulse"}`}>
-                  {isOnline ? "Modo Tablet Passador" : "Tablet Passador (Modo Offline)"}
-                </h4>
-                <p className="text-[10px] sm:text-[11px] text-white/50">
-                  {isOnline ? "Toque nas laterais da tela para navegar os slides" : "Salvando alterações localmente. Sincronização automática ativa!"}
-                </p>
+          {!isPresenterCompact && (
+            <div className="relative z-20 flex flex-col md:flex-row gap-3 justify-between items-start md:items-center bg-white/5 border border-white/10 p-4 rounded-2xl backdrop-blur-md mb-6">
+              <div className="flex items-center space-x-3">
+                <span className="flex h-3 w-3 relative">
+                  <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${isOnline ? "bg-emerald-400" : "bg-amber-400"}`}></span>
+                  <span className={`relative inline-flex rounded-full h-3 w-3 ${isOnline ? "bg-emerald-500" : "bg-amber-500"}`}></span>
+                </span>
+                <div>
+                  <h4 className={`text-xs font-mono font-bold uppercase tracking-wider ${isOnline ? "text-emerald-400" : "text-amber-400 animate-pulse"}`}>
+                    {isOnline ? "Modo Tablet Passador" : "Tablet Passador (Modo Offline)"}
+                  </h4>
+                  <p className="text-[10px] sm:text-[11px] text-white/50">
+                    {isOnline ? "Toque nas laterais da tela para navegar os slides" : "Sincronização local ativa em tempo real"}
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2 sm:gap-3 w-full md:w-auto justify-end">
+                {/* Blackout toggle */}
+                <button
+                  onClick={(e) => { e.stopPropagation(); toggleBlackout(); }}
+                  className={`px-2.5 py-1.5 rounded-xl border text-[11px] font-bold uppercase tracking-wider transition flex items-center space-x-1.5 cursor-pointer ${
+                    room.isBlackout
+                      ? "bg-red-500/20 border-red-500/40 text-red-400"
+                      : "bg-white/5 border-white/10 text-white/80 hover:bg-white/10"
+                  }`}
+                  title="Blackout"
+                >
+                  <EyeOff className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline">Blackout</span>
+                </button>
+
+                {/* Clear Text toggle */}
+                <button
+                  onClick={(e) => { e.stopPropagation(); toggleClearText(); }}
+                  className={`px-2.5 py-1.5 rounded-xl border text-[11px] font-bold uppercase tracking-wider transition flex items-center space-x-1.5 cursor-pointer ${
+                    room.isClearText
+                      ? "bg-amber-500/20 border-amber-500/40 text-amber-400"
+                      : "bg-white/5 border-white/10 text-white/80 hover:bg-white/10"
+                  }`}
+                  title="Limpar Letra"
+                >
+                  <Eye className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline">Limpar</span>
+                </button>
+
+                {/* Focus Mode toggle */}
+                <button
+                  onClick={(e) => { e.stopPropagation(); setIsPresenterCompact(true); }}
+                  className="px-2.5 py-1.5 rounded-xl border border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/10 text-[11px] font-bold uppercase tracking-wider transition flex items-center space-x-1.5 cursor-pointer"
+                  title="Ativar Modo Foco (Oculta cabeçalhos e rodapés para maximizar o texto)"
+                >
+                  <Maximize2 className="w-3.5 h-3.5" />
+                  <span>Modo Foco</span>
+                </button>
+
+                {/* Browser Fullscreen toggle */}
+                <button
+                  onClick={(e) => { 
+                    e.stopPropagation(); 
+                    if (!document.fullscreenElement) {
+                      document.documentElement.requestFullscreen().catch(() => {});
+                    } else {
+                      document.exitFullscreen().catch(() => {});
+                    }
+                  }}
+                  className="p-1.5 sm:p-2 bg-white/5 border border-white/10 hover:bg-white/10 text-white rounded-xl transition cursor-pointer"
+                  title="Alternar Tela Cheia do Navegador"
+                >
+                  <Presentation className="w-4 h-4" />
+                </button>
+
+                {/* Close/Exit Presenter Modal */}
+                <button
+                  onClick={() => setIsPresenterModeOpen(false)}
+                  className="p-2 bg-red-500/10 hover:bg-red-500/20 text-red-400 rounded-xl transition cursor-pointer border border-red-500/20"
+                  title="Sair do Passador"
+                >
+                  <LogOut className="w-4 h-4" />
+                </button>
               </div>
             </div>
+          )}
 
-            <div className="flex items-center space-x-2 sm:space-x-3">
-              {/* Blackout toggle */}
+          {/* Floating minimal toolbar when in Focus/Compact Mode */}
+          {isPresenterCompact && (
+            <div className="absolute top-4 right-4 z-40 flex items-center space-x-1.5 bg-[#0D0B21]/90 hover:bg-[#0D0B21] p-1.5 rounded-2xl border border-white/10 opacity-30 hover:opacity-100 transition-opacity duration-300 backdrop-blur-md shadow-2xl">
+              <button
+                onClick={(e) => { e.stopPropagation(); setIsPresenterCompact(false); }}
+                className="p-2 text-white/80 hover:text-white hover:bg-white/5 rounded-xl transition cursor-pointer flex items-center space-x-1"
+                title="Sair do Modo Foco (Mostrar Cabeçalhos)"
+              >
+                <Minimize2 className="w-4 h-4" />
+                <span className="text-[10px] uppercase font-bold tracking-wider hidden sm:inline">Restaurar</span>
+              </button>
+              <div className="w-px h-5 bg-white/10" />
               <button
                 onClick={(e) => { e.stopPropagation(); toggleBlackout(); }}
-                className={`px-2.5 py-1.5 rounded-xl border text-[11px] font-bold uppercase tracking-wider transition flex items-center space-x-1.5 cursor-pointer ${
+                className={`p-2 rounded-xl transition cursor-pointer ${
                   room.isBlackout
-                    ? "bg-red-500/20 border-red-500/40 text-red-400"
-                    : "bg-white/5 border-white/10 text-white/80 hover:bg-white/10"
+                    ? "bg-red-500/20 text-red-400"
+                    : "text-white/60 hover:text-white hover:bg-white/5"
                 }`}
+                title="Blackout"
               >
-                <EyeOff className="w-3.5 h-3.5" />
-                <span className="hidden sm:inline">Blackout</span>
+                <EyeOff className="w-4 h-4" />
               </button>
-
-              {/* Clear Text toggle */}
               <button
                 onClick={(e) => { e.stopPropagation(); toggleClearText(); }}
-                className={`px-2.5 py-1.5 rounded-xl border text-[11px] font-bold uppercase tracking-wider transition flex items-center space-x-1.5 cursor-pointer ${
+                className={`p-2 rounded-xl transition cursor-pointer ${
                   room.isClearText
-                    ? "bg-amber-500/20 border-amber-500/40 text-amber-400"
-                    : "bg-white/5 border-white/10 text-white/80 hover:bg-white/10"
+                    ? "bg-amber-500/20 text-amber-400"
+                    : "text-white/60 hover:text-white hover:bg-white/5"
                 }`}
+                title="Limpar Letra"
               >
-                <Eye className="w-3.5 h-3.5" />
-                <span className="hidden sm:inline">Limpar</span>
+                <Eye className="w-4 h-4" />
               </button>
-
-              {/* Close/Exit Presenter Modal */}
+              <div className="w-px h-5 bg-white/10" />
               <button
-                onClick={() => setIsPresenterModeOpen(false)}
-                className="p-2 bg-red-500/10 hover:bg-red-500/20 text-red-400 rounded-xl transition cursor-pointer border border-red-500/20"
-                title="Sair do Passador"
+                onClick={() => {
+                  setIsPresenterCompact(false);
+                  setIsPresenterModeOpen(false);
+                }}
+                className="p-2 bg-red-500/10 hover:bg-red-500/20 text-red-400 rounded-xl transition cursor-pointer"
+                title="Fechar Passador"
               >
                 <LogOut className="w-4 h-4" />
               </button>
             </div>
-          </div>
+          )}
 
           {/* Dual tap navigation panel container */}
           <div className="relative flex-1 flex flex-col justify-between items-center z-10 overflow-hidden">
@@ -2726,7 +2807,7 @@ export default function LeaderDashboard({ room, onDisconnect }: LeaderDashboardP
                 <ChevronRight className="w-10 h-10 sm:w-14 sm:h-14 text-white/10 group-hover:text-white/40 group-active:text-white/60 rotate-180" />
               </div>
               <span className="absolute left-16 sm:left-24 bottom-12 text-[10px] sm:text-xs uppercase font-mono tracking-widest text-white/10 group-hover:text-white/30 select-none transition-opacity">
-                ← Toque para voltar
+                ← Anterior
               </span>
             </div>
 
@@ -2745,30 +2826,34 @@ export default function LeaderDashboard({ room, onDisconnect }: LeaderDashboardP
             </div>
 
             {/* Central Slide Display (Visual replication of projector screen) */}
-            <div className="w-full max-w-4xl flex-1 flex flex-col justify-center items-center text-center px-4 sm:px-8 relative pointer-events-none z-0">
+            <div className="w-full max-w-5xl flex-1 flex flex-col justify-center items-center text-center px-4 sm:px-8 relative pointer-events-none z-0">
               
-              <div className="mb-4">
-                <span className="px-3 py-1.5 bg-white/5 border border-white/10 text-[10px] sm:text-xs font-mono tracking-widest text-emerald-400 uppercase font-bold rounded-full">
-                  {presenterInfo.typeLabel}
-                </span>
-              </div>
+              {!isPresenterCompact && (
+                <>
+                  <div className="mb-4">
+                    <span className="px-3 py-1.5 bg-white/5 border border-white/10 text-[10px] sm:text-xs font-mono tracking-widest text-emerald-400 uppercase font-bold rounded-full">
+                      {presenterInfo.typeLabel}
+                    </span>
+                  </div>
 
-              <h2 className="text-lg sm:text-2xl font-serif italic text-white/50 mb-6 sm:mb-10 tracking-wide px-4">
-                {presenterInfo.referenceText}
-              </h2>
+                  <h2 className="text-lg sm:text-2xl font-serif italic text-white/50 mb-6 sm:mb-10 tracking-wide px-4">
+                    {presenterInfo.referenceText}
+                  </h2>
+                </>
+              )}
 
               {/* Slide Lyrics Content */}
               <div className="space-y-4 sm:space-y-6 min-h-[160px] sm:min-h-[220px] flex flex-col justify-center w-full px-2">
                 {room.isBlackout ? (
                   <div className="space-y-2">
-                    <p className="text-xl sm:text-2xl font-mono text-red-400 uppercase tracking-widest animate-pulse font-bold">
+                    <p className="text-xl sm:text-2xl md:text-3xl font-mono text-red-400 uppercase tracking-widest animate-pulse font-bold">
                       ● BLACKOUT ATIVO
                     </p>
                     <p className="text-xs sm:text-sm text-white/40">O projetor está exibindo uma tela inteiramente preta.</p>
                   </div>
                 ) : room.isClearText ? (
                   <div className="space-y-2">
-                    <p className="text-xl sm:text-2xl font-mono text-amber-400 uppercase tracking-widest animate-pulse font-bold">
+                    <p className="text-xl sm:text-2xl md:text-3xl font-mono text-amber-400 uppercase tracking-widest animate-pulse font-bold">
                       ● TEXTO OCULTADO
                     </p>
                     <p className="text-xs sm:text-sm text-white/40">Fundo ativo exibido, mas o texto da letra foi limpo temporariamente.</p>
@@ -2781,7 +2866,11 @@ export default function LeaderDashboard({ room, onDisconnect }: LeaderDashboardP
                   presenterInfo.currentSlideLines.map((line, idx) => (
                     <p 
                       key={idx} 
-                      className="text-xl sm:text-3xl md:text-4xl lg:text-5xl font-serif italic font-medium leading-relaxed drop-shadow-[0_4px_12px_rgba(0,0,0,0.6)] text-[#FDFBF7]"
+                      className={`font-serif italic font-medium leading-relaxed drop-shadow-[0_4px_12px_rgba(0,0,0,0.6)] text-[#FDFBF7] ${
+                        isPresenterCompact 
+                          ? "text-2xl sm:text-4xl md:text-5xl lg:text-6xl xl:text-7xl" 
+                          : "text-xl sm:text-3xl md:text-4xl lg:text-5xl"
+                      }`}
                     >
                       {line}
                     </p>
@@ -2810,14 +2899,16 @@ export default function LeaderDashboard({ room, onDisconnect }: LeaderDashboardP
             </div>
 
             {/* Next Slide Preview Box */}
-            <div className="w-full max-w-2xl bg-white/5 border border-white/10 p-3 sm:p-4 rounded-2xl backdrop-blur-md text-center pointer-events-none relative z-20 mb-2">
-              <span className="text-[9px] sm:text-[10px] font-mono uppercase tracking-widest text-emerald-400/80 font-bold block mb-1">
-                👉 PRÓXIMO SLIDE:
-              </span>
-              <p className="text-xs sm:text-sm font-serif italic text-white/80 truncate px-4">
-                {presenterInfo.nextSlidePreview}
-              </p>
-            </div>
+            {!isPresenterCompact && (
+              <div className="w-full max-w-2xl bg-white/5 border border-white/10 p-3 sm:p-4 rounded-2xl backdrop-blur-md text-center pointer-events-none relative z-20 mb-2">
+                <span className="text-[9px] sm:text-[10px] font-mono uppercase tracking-widest text-emerald-400/80 font-bold block mb-1">
+                  👉 PRÓXIMO SLIDE:
+                </span>
+                <p className="text-xs sm:text-sm font-serif italic text-white/80 truncate px-4">
+                  {presenterInfo.nextSlidePreview}
+                </p>
+              </div>
+            )}
 
           </div>
         </div>

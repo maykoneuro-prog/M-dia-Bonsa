@@ -219,6 +219,113 @@ export default function LeaderDashboard({ room, onDisconnect }: LeaderDashboardP
     return () => unsubscribe();
   }, [room.id]);
 
+  // --- PRESENTER / TABLET NAVIGATION STATES & SELECTORS ---
+  const [isPresenterModeOpen, setIsPresenterModeOpen] = useState(false);
+
+  // Extract info for the Presenter Mode or live preview card
+  const getPresenterInfo = () => {
+    let typeLabel = "Nenhum";
+    let referenceText = "Pronto para projetar";
+    let currentSlideLines: string[] = [];
+    let nextSlidePreview = "Fim da apresentação";
+    let currentSlideIndex = 0;
+    let totalSlides = 0;
+
+    if (room.activeProjectionType === "scripture" && room.activeScriptureText && room.activeScriptureText.length > 0) {
+      typeLabel = "📖 Bíblia Sagrada";
+      referenceText = room.activeScriptureReference || "";
+      currentSlideIndex = room.activeScriptureIndex ?? 0;
+      totalSlides = room.activeScriptureText.length;
+      
+      const currentText = room.activeScriptureText[currentSlideIndex];
+      if (currentText) {
+        currentSlideLines = [currentText];
+      }
+      
+      const nextText = room.activeScriptureText[currentSlideIndex + 1];
+      nextSlidePreview = nextText ? nextText : "Fim do capítulo";
+    } else if (room.activeProjectionType === "offering") {
+      typeLabel = "💸 Dízimos e Ofertas";
+      referenceText = room.pixName || "Paróquia Bom Samaritano";
+      currentSlideLines = [
+        "Chave PIX: " + (room.pixKey || "Não configurada"),
+        "Contribua com alegria!"
+      ];
+      nextSlidePreview = "Nenhum slide subsequente";
+    } else if (room.activeAnnouncementType === "post-service") {
+      typeLabel = "📢 Avisos Pós-Culto";
+      const postServices = announcements.filter(a => a.type === "post-service");
+      totalSlides = postServices.length;
+      currentSlideIndex = room.activeAnnouncementIndex ?? 0;
+      
+      const currentAnn = postServices[currentSlideIndex];
+      if (currentAnn) {
+        referenceText = currentAnn.title;
+        currentSlideLines = currentAnn.lines;
+      }
+      
+      const nextAnn = postServices[currentSlideIndex + 1];
+      nextSlidePreview = nextAnn ? `${nextAnn.title}: ${nextAnn.lines.join(" ")}` : "Fim dos avisos";
+    } else if (room.activeAnnouncementType === "pre-service") {
+      typeLabel = "🔁 Loop de Pré-Culto";
+      const preServices = announcements.filter(a => a.type === "pre-service");
+      referenceText = "Looping de Entrada Automático";
+      currentSlideLines = ["Anúncios de recepção ativos", "Passagem automática a cada 7s"];
+      nextSlidePreview = "Fim do loop de entrada";
+    } else if (room.activeSongId && selectedSong) {
+      typeLabel = "🎵 Louvor";
+      referenceText = `${selectedSong.title} — ${selectedSong.artist}`;
+      currentSlideIndex = room.activeSlideIndex;
+      totalSlides = selectedSong.slides.length;
+      
+      const currentSlide = selectedSong.slides[currentSlideIndex];
+      if (currentSlide) {
+        currentSlideLines = currentSlide.lines;
+      }
+      
+      const nextSlide = selectedSong.slides[currentSlideIndex + 1];
+      nextSlidePreview = nextSlide ? nextSlide.lines.join(" / ") : "Fim do louvor";
+    }
+
+    return {
+      typeLabel,
+      referenceText,
+      currentSlideLines,
+      nextSlidePreview,
+      currentSlideIndex,
+      totalSlides
+    };
+  };
+
+  const presenterInfo = getPresenterInfo();
+
+  const handlePresenterPrev = async () => {
+    if (room.activeProjectionType === "scripture") {
+      await handlePrevScriptureSlide();
+    } else if (room.activeAnnouncementType === "post-service") {
+      await handlePrevAnnouncementSlide();
+    } else if (room.activeSongId) {
+      await handlePrevSlide();
+    }
+  };
+
+  const handlePresenterNext = async () => {
+    if (room.activeProjectionType === "scripture") {
+      await handleNextScriptureSlide();
+    } else if (room.activeAnnouncementType === "post-service") {
+      await handleNextAnnouncementSlide();
+    } else if (room.activeSongId) {
+      await handleNextSlide();
+    }
+  };
+
+  const hasActiveProjection = !!(
+    room.activeSongId || 
+    room.activeProjectionType === "scripture" || 
+    (room.activeProjectionType === "announcement" && room.activeAnnouncementType && room.activeAnnouncementType !== "none") ||
+    room.activeProjectionType === "offering"
+  );
+
   // Helper to parse pasted lyrics into slides
   const parsePastedLyrics = (text: string): Slide[] => {
     // Split raw text by double line breaks (handling different OS newline styles)
@@ -1008,83 +1115,155 @@ export default function LeaderDashboard({ room, onDisconnect }: LeaderDashboardP
         {/* Right column: Active Song Projection Controls & Live Lyrics (8 cols) */}
         <div className="lg:col-span-8 flex flex-col space-y-6">
           
-          {/* Active Screen Display & Projection Helpers */}
-          <div className="bg-white border border-natural-border p-5 rounded-2xl flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 shadow-sm">
-            <div>
-              <span className="text-[10px] font-bold text-natural-sage uppercase tracking-wider block mb-1 opacity-80">
-                Projeção Ativa
+          {/* Miniature Projector Monitor with Left/Right click zones */}
+          <div className="bg-slate-950 text-white border border-slate-800 rounded-2xl shadow-xl overflow-hidden relative flex flex-col min-h-[190px] justify-between">
+            
+            {/* Header of monitor */}
+            <div className="px-4 py-3 border-b border-white/5 bg-white/5 flex justify-between items-center z-20">
+              <div className="flex items-center space-x-2">
+                <span className="flex h-2 w-2 relative">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                </span>
+                <span className="text-[10px] font-mono uppercase tracking-wider font-bold text-slate-300">
+                  Monitor do Datashow ({presenterInfo.typeLabel})
+                </span>
+              </div>
+              <span className="text-[10px] font-mono text-slate-400 uppercase tracking-wider">
+                {presenterInfo.totalSlides > 0 ? `Slide ${presenterInfo.currentSlideIndex + 1} de ${presenterInfo.totalSlides}` : ""}
               </span>
-              <h2 className="text-lg font-serif italic font-bold text-natural-text truncate max-w-md">
-                {selectedSong ? selectedSong.title : "Nenhum Louvor Ativo"}
-              </h2>
-              {selectedSong && (
-                <div>
-                  <p className="text-xs text-natural-text/60 font-medium uppercase mt-0.5 tracking-wide">
-                    Por {selectedSong.artist}
+            </div>
+
+            {/* Click/Touch areas */}
+            <div className="absolute inset-x-0 top-10 bottom-12 flex z-10 select-none">
+              {/* Left Zone (Prev) */}
+              <button
+                onClick={handlePresenterPrev}
+                className="w-1/2 h-full cursor-pointer flex items-center justify-start pl-3 hover:bg-white/[0.02] active:bg-white/[0.05] group text-left transition-colors focus:outline-none"
+                title="Slide Anterior"
+              >
+                <ChevronRight className="w-5 h-5 text-white/5 group-hover:text-white/20 group-active:text-white/40 rotate-180 transition-colors" />
+                <span className="text-[9px] uppercase font-mono tracking-wider text-white/5 group-hover:text-white/20 ml-1">
+                  Voltar
+                </span>
+              </button>
+
+              {/* Right Zone (Next) */}
+              <button
+                onClick={handlePresenterNext}
+                className="w-1/2 h-full cursor-pointer flex items-center justify-end pr-3 hover:bg-white/[0.02] active:bg-white/[0.05] group text-right transition-colors focus:outline-none"
+                title="Próximo Slide"
+              >
+                <span className="text-[9px] uppercase font-mono tracking-wider text-white/5 group-hover:text-white/20 mr-1">
+                  Avançar
+                </span>
+                <ChevronRight className="w-5 h-5 text-white/5 group-hover:text-white/20 group-active:text-white/40 transition-colors" />
+              </button>
+            </div>
+
+            {/* Central Display */}
+            <div className="flex-1 p-5 flex flex-col justify-center items-center text-center relative pointer-events-none z-0">
+              <h3 className="text-xs font-serif italic text-white/40 mb-2 truncate max-w-lg">
+                {presenterInfo.referenceText}
+              </h3>
+              
+              <div className="space-y-1 font-serif text-center w-full max-w-xl py-1 font-medium italic text-[#FDFBF7]">
+                {room.isBlackout ? (
+                  <p className="text-sm font-mono text-red-400 uppercase tracking-widest animate-pulse">
+                    ● Blackout Ativo
                   </p>
-                  {selectedService && (
-                    <div className="mt-2.5 pt-2 border-t border-natural-border/60 flex flex-wrap items-center gap-2">
-                      <span className="text-[10px] font-bold text-natural-text/40 uppercase">Adicionar ao Culto:</span>
-                      <select
-                        value={songLiturgyCategories[selectedSong.id] || "Momento de Louvor"}
-                        onChange={(e) => setSongLiturgyCategories(prev => ({ ...prev, [selectedSong.id]: e.target.value }))}
-                        className="px-2 py-0.5 bg-natural-bg border border-natural-border rounded text-[10px] text-natural-text/70 focus:outline-none"
-                      >
-                        {LITURGY_CATEGORIES.map(cat => (
-                          <option key={cat} value={cat}>{cat}</option>
-                        ))}
-                      </select>
-                      <button
-                        onClick={() => handleAddSongToService(selectedSong)}
-                        className="px-2 py-0.5 bg-natural-sage text-white rounded text-[10px] font-bold hover:bg-natural-sage-hover transition flex items-center space-x-1 cursor-pointer"
-                      >
-                        <Plus className="w-3 h-3" />
-                        <span>Agendar no Culto</span>
-                      </button>
-                    </div>
-                  )}
-                </div>
-              )}
+                ) : room.isClearText ? (
+                  <p className="text-sm font-mono text-amber-400 uppercase tracking-widest animate-pulse">
+                    ● Letra Ocultada
+                  </p>
+                ) : presenterInfo.currentSlideLines.length === 0 ? (
+                  <p className="text-xs text-slate-500 font-mono">Sem projeção ativa. Selecione um item.</p>
+                ) : (
+                  presenterInfo.currentSlideLines.slice(0, 3).map((line, idx) => (
+                    <p key={idx} className="text-sm sm:text-base leading-relaxed">
+                      {line}
+                    </p>
+                  ))
+                )}
+                {presenterInfo.currentSlideLines.length > 3 && (
+                  <p className="text-[10px] text-slate-500 font-sans font-normal">...</p>
+                )}
+              </div>
             </div>
 
-            {/* Quick Display Action Overrides */}
-            <div className="flex flex-wrap items-center gap-2">
-              <button
-                onClick={toggleBlackout}
-                className={`px-3 py-1.5 rounded-xl border text-xs font-semibold transition flex items-center space-x-1.5 cursor-pointer ${
-                  room.isBlackout
-                    ? "bg-red-500/10 border-red-500/30 text-red-600"
-                    : "bg-natural-bg border-natural-border text-natural-text/70 hover:bg-natural-cream"
-                }`}
-                title="Deixar tela de projeção preta"
-              >
-                <EyeOff className="w-3.5 h-3.5" />
-                <span>Modo Blackout</span>
-              </button>
-
-              <button
-                onClick={toggleClearText}
-                className={`px-3 py-1.5 rounded-xl border text-xs font-semibold transition flex items-center space-x-1.5 cursor-pointer ${
-                  room.isClearText
-                    ? "bg-amber-500/10 border-amber-500/30 text-amber-600"
-                    : "bg-natural-bg border-natural-border text-natural-text/70 hover:bg-natural-cream"
-                }`}
-                title="Limpar letra mantendo o fundo"
-              >
-                <Eye className="w-3.5 h-3.5" />
-                <span>Limpar Letra</span>
-              </button>
-
-              {selectedSong && (
+            {/* Quick action bar of monitor */}
+            <div className="px-4 py-2.5 border-t border-white/5 bg-white/5 flex justify-between items-center z-20">
+              <div className="flex space-x-2">
                 <button
-                  onClick={handleClearProject}
-                  className="px-3 py-1.5 bg-natural-bg border border-natural-border hover:bg-red-50 hover:border-red-200 hover:text-red-600 text-natural-text/70 rounded-xl text-xs font-semibold transition cursor-pointer"
+                  onClick={toggleBlackout}
+                  className={`px-2 py-1 rounded text-[10px] font-bold uppercase tracking-wider border cursor-pointer transition ${
+                    room.isBlackout
+                      ? "bg-red-500/20 border-red-500/40 text-red-400"
+                      : "bg-white/5 border-white/10 text-slate-300 hover:bg-white/10"
+                  }`}
                 >
-                  Fechar Letra
+                  Blackout
                 </button>
-              )}
+                <button
+                  onClick={toggleClearText}
+                  className={`px-2 py-1 rounded text-[10px] font-bold uppercase tracking-wider border cursor-pointer transition ${
+                    room.isClearText
+                      ? "bg-amber-500/20 border-amber-500/40 text-amber-400"
+                      : "bg-white/5 border-white/10 text-slate-300 hover:bg-white/10"
+                  }`}
+                >
+                  Limpar
+                </button>
+                {selectedSong && (
+                  <button
+                    onClick={handleClearProject}
+                    className="px-2 py-1 bg-white/5 border border-white/10 hover:bg-red-500/10 hover:border-red-500/30 hover:text-red-400 text-slate-300 rounded text-[10px] font-bold uppercase tracking-wider cursor-pointer"
+                  >
+                    Fechar
+                  </button>
+                )}
+              </div>
+
+              <div className="flex items-center space-x-2">
+                <span className="text-[9px] font-mono text-slate-500 hidden sm:inline">
+                  Próximo: {presenterInfo.nextSlidePreview.substring(0, 24)}...
+                </span>
+                <button
+                  onClick={() => setIsPresenterModeOpen(true)}
+                  className="px-2 py-1 bg-emerald-600 hover:bg-emerald-500 text-white text-[10px] font-bold uppercase tracking-wider rounded transition cursor-pointer flex items-center space-x-1"
+                >
+                  <Tv className="w-3 h-3" />
+                  <span>Modo Tablet</span>
+                </button>
+              </div>
             </div>
+
           </div>
+
+          {/* Liturgical Add Action Bar if active */}
+          {selectedSong && selectedService && (
+            <div className="bg-white border border-natural-border p-4 rounded-2xl flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 shadow-sm text-xs">
+              <div className="flex items-center space-x-2">
+                <span className="font-bold text-natural-text/60">Vincular louvor ao culto planejado:</span>
+                <select
+                  value={songLiturgyCategories[selectedSong.id] || "Momento de Louvor"}
+                  onChange={(e) => setSongLiturgyCategories(prev => ({ ...prev, [selectedSong.id]: e.target.value }))}
+                  className="px-2 py-1 bg-natural-bg border border-natural-border rounded-lg text-xs text-natural-text/85 focus:outline-none focus:border-natural-sage focus:ring-1 focus:ring-natural-sage/20"
+                >
+                  {LITURGY_CATEGORIES.map(cat => (
+                    <option key={cat} value={cat}>{cat}</option>
+                  ))}
+                </select>
+              </div>
+              <button
+                onClick={() => handleAddSongToService(selectedSong)}
+                className="px-3.5 py-1.5 bg-natural-sage hover:bg-natural-sage-hover text-white rounded-xl font-bold transition flex items-center space-x-1.5 cursor-pointer shadow-sm self-end sm:self-auto"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>Escalar em: {selectedService.title}</span>
+              </button>
+            </div>
+          )}
 
           {/* Active Slides Deck */}
           <div className="bg-white border border-natural-border rounded-2xl flex-1 flex flex-col overflow-hidden shadow-sm">
@@ -2433,6 +2612,189 @@ export default function LeaderDashboard({ room, onDisconnect }: LeaderDashboardP
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Floating Presenter Mode Trigger FAB for Tablet */}
+      {hasActiveProjection && (
+        <button
+          onClick={() => setIsPresenterModeOpen(true)}
+          className="fixed bottom-6 right-6 z-40 bg-natural-sage hover:bg-natural-sage-hover text-white p-4 rounded-full shadow-2xl flex items-center space-x-2 border border-white/20 transition-all duration-300 hover:scale-105 active:scale-95 cursor-pointer group animate-bounce"
+          title="Abrir Passador de Slides por Toque"
+          id="btn-open-presenter-mode"
+        >
+          <Tv className="w-5 h-5 group-hover:rotate-12 transition-transform" />
+          <span className="text-xs font-bold uppercase tracking-wider pr-1 hidden sm:inline">Passador Tablet</span>
+        </button>
+      )}
+
+      {/* Full-screen Slide Presenter Mode Overlay */}
+      {isPresenterModeOpen && (
+        <div className="fixed inset-0 bg-[#0D0B21] text-[#FDFBF7] z-50 flex flex-col p-4 sm:p-6 select-none animate-fade-in font-sans">
+          
+          {/* Header Controls */}
+          <div className="relative z-20 flex justify-between items-center bg-white/5 border border-white/10 p-4 rounded-2xl backdrop-blur-md mb-6">
+            <div className="flex items-center space-x-3">
+              <span className="flex h-3 w-3 relative">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-3 w-3 bg-emerald-500"></span>
+              </span>
+              <div>
+                <h4 className="text-xs font-mono font-bold uppercase tracking-wider text-emerald-400">
+                  Modo Tablet Passador
+                </h4>
+                <p className="text-[10px] sm:text-[11px] text-white/50">
+                  Toque nas laterais da tela para navegar os slides
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center space-x-2 sm:space-x-3">
+              {/* Blackout toggle */}
+              <button
+                onClick={(e) => { e.stopPropagation(); toggleBlackout(); }}
+                className={`px-2.5 py-1.5 rounded-xl border text-[11px] font-bold uppercase tracking-wider transition flex items-center space-x-1.5 cursor-pointer ${
+                  room.isBlackout
+                    ? "bg-red-500/20 border-red-500/40 text-red-400"
+                    : "bg-white/5 border-white/10 text-white/80 hover:bg-white/10"
+                }`}
+              >
+                <EyeOff className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">Blackout</span>
+              </button>
+
+              {/* Clear Text toggle */}
+              <button
+                onClick={(e) => { e.stopPropagation(); toggleClearText(); }}
+                className={`px-2.5 py-1.5 rounded-xl border text-[11px] font-bold uppercase tracking-wider transition flex items-center space-x-1.5 cursor-pointer ${
+                  room.isClearText
+                    ? "bg-amber-500/20 border-amber-500/40 text-amber-400"
+                    : "bg-white/5 border-white/10 text-white/80 hover:bg-white/10"
+                }`}
+              >
+                <Eye className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">Limpar</span>
+              </button>
+
+              {/* Close/Exit Presenter Modal */}
+              <button
+                onClick={() => setIsPresenterModeOpen(false)}
+                className="p-2 bg-red-500/10 hover:bg-red-500/20 text-red-400 rounded-xl transition cursor-pointer border border-red-500/20"
+                title="Sair do Passador"
+              >
+                <LogOut className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+
+          {/* Dual tap navigation panel container */}
+          <div className="relative flex-1 flex flex-col justify-between items-center z-10 overflow-hidden">
+            
+            {/* Click & Tap Areas */}
+            {/* Left Tap Zone */}
+            <div 
+              onClick={handlePresenterPrev}
+              className="absolute left-0 top-0 bottom-0 w-1/2 cursor-pointer group flex items-center justify-start pl-4 sm:pl-8 z-10"
+              title="Slide Anterior"
+            >
+              <div className="p-3 sm:p-5 rounded-full bg-white/0 group-hover:bg-white/5 group-active:bg-white/10 transition duration-200">
+                <ChevronRight className="w-10 h-10 sm:w-14 sm:h-14 text-white/10 group-hover:text-white/40 group-active:text-white/60 rotate-180" />
+              </div>
+              <span className="absolute left-16 sm:left-24 bottom-12 text-[10px] sm:text-xs uppercase font-mono tracking-widest text-white/10 group-hover:text-white/30 select-none transition-opacity">
+                ← Toque para voltar
+              </span>
+            </div>
+
+            {/* Right Tap Zone */}
+            <div 
+              onClick={handlePresenterNext}
+              className="absolute right-0 top-0 bottom-0 w-1/2 cursor-pointer group flex items-center justify-end pr-4 sm:pr-8 z-10"
+              title="Próximo Slide"
+            >
+              <div className="p-3 sm:p-5 rounded-full bg-white/0 group-hover:bg-white/5 group-active:bg-white/10 transition duration-200">
+                <ChevronRight className="w-10 h-10 sm:w-14 sm:h-14 text-white/10 group-hover:text-white/40 group-active:text-white/60" />
+              </div>
+              <span className="absolute right-16 sm:right-24 bottom-12 text-[10px] sm:text-xs uppercase font-mono tracking-widest text-white/10 group-hover:text-white/30 select-none transition-opacity">
+                Avançar →
+              </span>
+            </div>
+
+            {/* Central Slide Display (Visual replication of projector screen) */}
+            <div className="w-full max-w-4xl flex-1 flex flex-col justify-center items-center text-center px-4 sm:px-8 relative pointer-events-none z-0">
+              
+              <div className="mb-4">
+                <span className="px-3 py-1.5 bg-white/5 border border-white/10 text-[10px] sm:text-xs font-mono tracking-widest text-emerald-400 uppercase font-bold rounded-full">
+                  {presenterInfo.typeLabel}
+                </span>
+              </div>
+
+              <h2 className="text-lg sm:text-2xl font-serif italic text-white/50 mb-6 sm:mb-10 tracking-wide px-4">
+                {presenterInfo.referenceText}
+              </h2>
+
+              {/* Slide Lyrics Content */}
+              <div className="space-y-4 sm:space-y-6 min-h-[160px] sm:min-h-[220px] flex flex-col justify-center w-full px-2">
+                {room.isBlackout ? (
+                  <div className="space-y-2">
+                    <p className="text-xl sm:text-2xl font-mono text-red-400 uppercase tracking-widest animate-pulse font-bold">
+                      ● BLACKOUT ATIVO
+                    </p>
+                    <p className="text-xs sm:text-sm text-white/40">O projetor está exibindo uma tela inteiramente preta.</p>
+                  </div>
+                ) : room.isClearText ? (
+                  <div className="space-y-2">
+                    <p className="text-xl sm:text-2xl font-mono text-amber-400 uppercase tracking-widest animate-pulse font-bold">
+                      ● TEXTO OCULTADO
+                    </p>
+                    <p className="text-xs sm:text-sm text-white/40">Fundo ativo exibido, mas o texto da letra foi limpo temporariamente.</p>
+                  </div>
+                ) : presenterInfo.currentSlideLines.length === 0 ? (
+                  <p className="text-lg text-white/30 italic">
+                    Nenhuma projeção ativa na sala no momento.
+                  </p>
+                ) : (
+                  presenterInfo.currentSlideLines.map((line, idx) => (
+                    <p 
+                      key={idx} 
+                      className="text-xl sm:text-3xl md:text-4xl lg:text-5xl font-serif italic font-medium leading-relaxed drop-shadow-[0_4px_12px_rgba(0,0,0,0.6)] text-[#FDFBF7]"
+                    >
+                      {line}
+                    </p>
+                  ))
+                )}
+              </div>
+
+              {/* Progress Tracker (Slides Count dots) */}
+              {presenterInfo.totalSlides > 0 && (
+                <div className="mt-8 sm:mt-12 flex flex-col items-center space-y-2.5">
+                  <span className="text-[10px] sm:text-xs font-mono text-white/40 uppercase tracking-widest font-bold">
+                    Slide {presenterInfo.currentSlideIndex + 1} de {presenterInfo.totalSlides}
+                  </span>
+                  <div className="flex flex-wrap gap-1.5 justify-center max-w-sm">
+                    {Array.from({ length: presenterInfo.totalSlides }).map((_, i) => (
+                      <div 
+                        key={i} 
+                        className={`h-1.5 rounded-full transition-all duration-300 ${
+                          i === presenterInfo.currentSlideIndex ? "w-6 bg-emerald-400" : "w-1.5 bg-white/10"
+                        }`}
+                      />
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Next Slide Preview Box */}
+            <div className="w-full max-w-2xl bg-white/5 border border-white/10 p-3 sm:p-4 rounded-2xl backdrop-blur-md text-center pointer-events-none relative z-20 mb-2">
+              <span className="text-[9px] sm:text-[10px] font-mono uppercase tracking-widest text-emerald-400/80 font-bold block mb-1">
+                👉 PRÓXIMO SLIDE:
+              </span>
+              <p className="text-xs sm:text-sm font-serif italic text-white/80 truncate px-4">
+                {presenterInfo.nextSlidePreview}
+              </p>
+            </div>
+
           </div>
         </div>
       )}

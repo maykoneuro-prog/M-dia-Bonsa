@@ -225,6 +225,7 @@ export default function LeaderDashboard({ room, onDisconnect }: LeaderDashboardP
   const [isPresenterModeOpen, setIsPresenterModeOpen] = useState(false);
   const [isOnline, setIsOnline] = useState(navigator.onLine);
   const [isPresenterCompact, setIsPresenterCompact] = useState(true);
+  const [isFullscreen, setIsFullscreen] = useState(false);
 
   useEffect(() => {
     const handleOnline = () => setIsOnline(true);
@@ -233,9 +234,15 @@ export default function LeaderDashboard({ room, onDisconnect }: LeaderDashboardP
     window.addEventListener("online", handleOnline);
     window.addEventListener("offline", handleOffline);
 
+    const handleFullscreenChange = () => {
+      setIsFullscreen(!!document.fullscreenElement);
+    };
+    document.addEventListener("fullscreenchange", handleFullscreenChange);
+
     return () => {
       window.removeEventListener("online", handleOnline);
       window.removeEventListener("offline", handleOffline);
+      document.removeEventListener("fullscreenchange", handleFullscreenChange);
     };
   }, []);
 
@@ -2660,11 +2667,34 @@ export default function LeaderDashboard({ room, onDisconnect }: LeaderDashboardP
       {isPresenterModeOpen && (
         <div className="fixed inset-0 bg-[#0D0B21] text-[#FDFBF7] z-50 flex flex-col p-4 sm:p-6 select-none animate-fade-in font-sans">
           
-          {/* Floating Close Button */}
-          <div className="absolute top-4 right-4 z-40">
+          {/* Floating Action Buttons */}
+          <div className="absolute top-4 right-4 z-40 flex items-center space-x-2">
+            {/* Fullscreen Button */}
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                if (!document.fullscreenElement) {
+                  document.documentElement.requestFullscreen().catch(() => {});
+                } else {
+                  document.exitFullscreen().catch(() => {});
+                }
+              }}
+              className="p-3 bg-white/10 hover:bg-white/20 text-white rounded-2xl border border-white/10 transition-all duration-200 hover:scale-105 active:scale-95 cursor-pointer flex items-center space-x-1.5 backdrop-blur-md shadow-2xl"
+              title={isFullscreen ? "Sair da Tela Cheia" : "Tela Cheia"}
+            >
+              {isFullscreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
+              <span className="text-xs font-bold uppercase tracking-wider pr-1">
+                {isFullscreen ? "Sair de Tela Cheia" : "Tela Cheia"}
+              </span>
+            </button>
+
+            {/* Exit/Close Presenter */}
             <button
               onClick={() => {
                 setIsPresenterModeOpen(false);
+                if (document.fullscreenElement) {
+                  document.exitFullscreen().catch(() => {});
+                }
               }}
               className="p-3 bg-red-500/20 hover:bg-red-500/30 text-red-400 hover:text-red-300 rounded-2xl border border-red-500/30 transition-all duration-200 hover:scale-105 active:scale-95 cursor-pointer flex items-center space-x-1.5 backdrop-blur-md shadow-2xl"
               title="Sair do Passador"

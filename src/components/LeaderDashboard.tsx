@@ -221,6 +221,20 @@ export default function LeaderDashboard({ room, onDisconnect }: LeaderDashboardP
 
   // --- PRESENTER / TABLET NAVIGATION STATES & SELECTORS ---
   const [isPresenterModeOpen, setIsPresenterModeOpen] = useState(false);
+  const [isOnline, setIsOnline] = useState(navigator.onLine);
+
+  useEffect(() => {
+    const handleOnline = () => setIsOnline(true);
+    const handleOffline = () => setIsOnline(false);
+
+    window.addEventListener("online", handleOnline);
+    window.addEventListener("offline", handleOffline);
+
+    return () => {
+      window.removeEventListener("online", handleOnline);
+      window.removeEventListener("offline", handleOffline);
+    };
+  }, []);
 
   // Extract info for the Presenter Mode or live preview card
   const getPresenterInfo = () => {
@@ -882,6 +896,16 @@ export default function LeaderDashboard({ room, onDisconnect }: LeaderDashboardP
 
         {/* Room badge & control triggers */}
         <div className="flex flex-wrap items-center gap-3">
+          {/* Connection Status Pill */}
+          <div className={`px-3 py-1.5 rounded-xl border flex items-center space-x-2 text-xs font-semibold ${
+            isOnline 
+              ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-700" 
+              : "bg-amber-500/10 border-amber-500/20 text-amber-700 animate-pulse"
+          }`}>
+            <span className={`h-2 w-2 rounded-full ${isOnline ? "bg-emerald-500" : "bg-amber-500"}`} />
+            <span>{isOnline ? "Dispositivo Online" : "Modo Offline Ativo"}</span>
+          </div>
+
           <div className="px-4 py-2 bg-natural-cream border border-natural-border rounded-xl flex items-center space-x-2">
             <span className="text-[10px] text-natural-sage/70 font-semibold tracking-wider font-mono">SALA:</span>
             <span className="text-sm font-bold tracking-widest text-natural-sage font-mono uppercase">
@@ -2637,15 +2661,15 @@ export default function LeaderDashboard({ room, onDisconnect }: LeaderDashboardP
           <div className="relative z-20 flex justify-between items-center bg-white/5 border border-white/10 p-4 rounded-2xl backdrop-blur-md mb-6">
             <div className="flex items-center space-x-3">
               <span className="flex h-3 w-3 relative">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                <span className="relative inline-flex rounded-full h-3 w-3 bg-emerald-500"></span>
+                <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${isOnline ? "bg-emerald-400" : "bg-amber-400"}`}></span>
+                <span className={`relative inline-flex rounded-full h-3 w-3 ${isOnline ? "bg-emerald-500" : "bg-amber-500"}`}></span>
               </span>
               <div>
-                <h4 className="text-xs font-mono font-bold uppercase tracking-wider text-emerald-400">
-                  Modo Tablet Passador
+                <h4 className={`text-xs font-mono font-bold uppercase tracking-wider ${isOnline ? "text-emerald-400" : "text-amber-400 animate-pulse"}`}>
+                  {isOnline ? "Modo Tablet Passador" : "Tablet Passador (Modo Offline)"}
                 </h4>
                 <p className="text-[10px] sm:text-[11px] text-white/50">
-                  Toque nas laterais da tela para navegar os slides
+                  {isOnline ? "Toque nas laterais da tela para navegar os slides" : "Salvando alterações localmente. Sincronização automática ativa!"}
                 </p>
               </div>
             </div>

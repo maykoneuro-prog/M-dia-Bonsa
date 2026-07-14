@@ -1,5 +1,5 @@
 import { initializeApp } from "firebase/app";
-import { getFirestore } from "firebase/firestore";
+import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, getFirestore } from "firebase/firestore";
 
 const firebaseConfig = {
   apiKey: "AIzaSyDvDPdRauEaWjFffz5TACDwbr1FRklzoIM",
@@ -12,7 +12,16 @@ const firebaseConfig = {
 
 const app = initializeApp(firebaseConfig);
 
-// Initialize with the specific databaseId provisioned by AI Studio
-const db = getFirestore(app, "ai-studio-5f49a379-993e-4a4b-9e31-ab1eb8c3ea2c");
+let db;
+try {
+  db = initializeFirestore(app, {
+    localCache: persistentLocalCache({
+      tabManager: persistentMultipleTabManager()
+    })
+  }, "ai-studio-5f49a379-993e-4a4b-9e31-ab1eb8c3ea2c");
+} catch (e) {
+  console.warn("Falha ao inicializar o cache persistente do Firestore. Usando Firestore padrão:", e);
+  db = getFirestore(app, "ai-studio-5f49a379-993e-4a4b-9e31-ab1eb8c3ea2c");
+}
 
 export { db };

@@ -54,20 +54,23 @@ export interface Announcement {
   title: string;
   lines: string[];
   order: number;
+  imageUrl?: string;
   createdAt?: any;
 }
 
 export const LITURGY_CATEGORIES = [
+  "Avisos antes do culto",
   "Processional",
-  "Confissão",
-  "Momento de Louvor",
+  "Sentença Introdutória",
+  "Confissão de pecados",
+  "Momento de louvor",
   "Leitura da Palavra",
-  "Antes da Ministração",
-  "Louvor Pós Ministração",
-  "Pai Nosso",
+  "Louvor",
+  "Palavra",
+  "Louvor pós palavra",
   "Ofertório",
-  "Ceia",
+  "Pai Nosso",
+  "Louvor ceia",
   "Parabéns",
-  "Visitantes",
   "Recessional"
 ] as const;

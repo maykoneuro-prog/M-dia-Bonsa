@@ -52,6 +52,15 @@ service cloud.firestore {
         && data.items is list;
     }
 
+    // Validation for Announcement entity
+    function isValidAnnouncement(data) {
+      return data.keys().hasAll(['roomId', 'type', 'title', 'lines', 'order'])
+        && data.roomId is string
+        && (data.type == 'pre-service' || data.type == 'post-service')
+        && data.title is string && data.title.size() <= 200
+        && data.lines is list;
+    }
+
     // Songs collection rules
     match /songs/{songId} {
       allow get: if isValidId(songId);
@@ -80,6 +89,16 @@ service cloud.firestore {
       allow create: if isValidId(serviceId) && isValidService(incoming());
       allow update: if isValidId(serviceId) && isValidService(incoming());
       allow delete: if isValidId(serviceId);
+    }
+
+    // Announcements collection rules
+    match /announcements/{announcementId} {
+      allow get: if isValidId(announcementId);
+      allow list: if true;
+      
+      allow create: if isValidId(announcementId) && isValidAnnouncement(incoming());
+      allow update: if isValidId(announcementId) && isValidAnnouncement(incoming());
+      allow delete: if isValidId(announcementId);
     }
   }
 }

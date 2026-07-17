@@ -32,6 +32,8 @@ import {
 import { Song, Slide, Room, Service, ServiceItem, LITURGY_CATEGORIES, Announcement } from "../types";
 import { 
   addSongToLibrary, 
+  deleteSongFromLibrary,
+  updateSongInLibrary,
   updateRoomActiveState, 
   updateRoomDisplaySettings,
   listenToSongs,
@@ -128,8 +130,12 @@ interface LeaderDashboardProps {
 
 export default function LeaderDashboard({ room, onDisconnect }: LeaderDashboardProps) {
   const [songsList, setSongsList] = useState<Song[]>([]);
-  const [searchQuery, setSearchQuery] = useState("");
-  const [isSearchingGemini, setIsSearchingGemini] = useState(false);
+  const [inlineTitle, setInlineTitle] = useState("");
+  const [inlineArtist, setInlineArtist] = useState("");
+  const [inlineLyrics, setInlineLyrics] = useState("");
+  const [isSavingInline, setIsSavingInline] = useState(false);
+  const [librarySearchQuery, setLibrarySearchQuery] = useState("");
+  const [viewingLibrarySong, setViewingLibrarySong] = useState<Song | null>(null);
   const [searchMessage, setSearchMessage] = useState("");
   const [selectedSong, setSelectedSong] = useState<Song | null>(null);
   const [showShareModal, setShowShareModal] = useState(false);
@@ -141,18 +147,62 @@ export default function LeaderDashboard({ room, onDisconnect }: LeaderDashboardP
   const [manualArtist, setManualArtist] = useState("");
   const [manualLyrics, setManualLyrics] = useState("");
   const [isSavingManual, setIsSavingManual] = useState(false);
+  const [editingSongId, setEditingSongId] = useState<string | null>(null);
 
   // Tab control
-  const [activeTab, setActiveTab] = useState<"projection" | "services" | "announcements">("services");
+  const [activeTab, setActiveTab] = useState<"songs" | "projection" | "services" | "announcements" | "bible" | "offering">("services");
+  const [previewSong, setPreviewSong] = useState<Song | null>(null);
+
+  const toggleFullscreen = () => {
+    if (!document.fullscreenElement) {
+      document.documentElement.requestFullscreen().catch((err) => {
+        console.error("Erro ao ativar tela cheia:", err);
+      });
+    } else {
+      document.exitFullscreen().catch((err) => {
+        console.error("Erro ao fechar tela cheia:", err);
+      });
+    }
+  };
+
+  // Sync previewSong with selectedSong when it is set or projected
+  useEffect(() => {
+    if (selectedSong) {
+      setPreviewSong(selectedSong);
+    }
+  }, [selectedSong]);
 
   // Announcements States
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
   const [showAnnModal, setShowAnnModal] = useState(false);
   const [annTitle, setAnnTitle] = useState("");
   const [annLinesText, setAnnLinesText] = useState("");
+  const [annImageUrl, setAnnImageUrl] = useState("");
   const [annType, setAnnType] = useState<"pre-service" | "post-service">("pre-service");
   const [editingAnnId, setEditingAnnId] = useState<string | null>(null);
   const [isSavingAnn, setIsSavingAnn] = useState(false);
+
+  // Custom Confirmation Dialog State (to avoid native confirm blocks in iframes)
+  const [confirmDialog, setConfirmDialog] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    onConfirm: () => void | Promise<void>;
+  }>({
+    isOpen: false,
+    title: "",
+    message: "",
+    onConfirm: () => {}
+  });
+
+  const showConfirmation = (title: string, message: string, onConfirm: () => void | Promise<void>) => {
+    setConfirmDialog({
+      isOpen: true,
+      title,
+      message,
+      onConfirm
+    });
+  };
 
   // --- BIBLE SAGRADA STATES ---
   const [bibleVersion, setBibleVersion] = useState<"nvi" | "ra" | "acf">("nvi");
@@ -201,6 +251,8 @@ export default function LeaderDashboard({ room, onDisconnect }: LeaderDashboardP
   const [isSavingService, setIsSavingService] = useState(false);
   // Holds the chosen liturgical category per song ID before adding it
   const [songLiturgyCategories, setSongLiturgyCategories] = useState<{[songId: string]: string}>({});
+  const [showSongSelectorForCategory, setShowSongSelectorForCategory] = useState<string | null>(null);
+  const [songSelectorSearch, setSongSelectorSearch] = useState("");
 
   // Sync worship services from database
   useEffect(() => {
@@ -419,29 +471,61 @@ export default function LeaderDashboard({ room, onDisconnect }: LeaderDashboardP
         throw new Error("A letra informada não possui linhas de texto válidas.");
       }
 
-      const newSongId = await addSongToLibrary({
-        title: manualTitle.trim(),
-        artist: manualArtist.trim() || "Desconhecido",
-        slides: parsedSlides
-      });
+      if (editingSongId) {
+        // Edit flow
+        await updateSongInLibrary(editingSongId, {
+          title: manualTitle.trim(),
+          artist: manualArtist.trim() || "Desconhecido",
+          slides: parsedSlides
+        });
+
+        const updatedSong: Song = {
+          id: editingSongId,
+          title: manualTitle.trim(),
+          artist: manualArtist.trim() || "Desconhecido",
+          slides: parsedSlides
+        };
+
+        // Also update selectedSong in local state if it's the currently active projection song
+        if (selectedSong?.id === editingSongId) {
+          setSelectedSong(updatedSong);
+        }
+        if (previewSong?.id === editingSongId) {
+          setPreviewSong(updatedSong);
+        }
+        if (viewingLibrarySong?.id === editingSongId) {
+          setViewingLibrarySong(updatedSong);
+        }
+
+        setSearchMessage(`"${manualTitle.trim()}" atualizado com sucesso!`);
+      } else {
+        // Create flow
+        const newSongId = await addSongToLibrary({
+          title: manualTitle.trim(),
+          artist: manualArtist.trim() || "Desconhecido",
+          slides: parsedSlides
+        });
+
+        // Instantly select the manually added song
+        const newSong: Song = {
+          id: newSongId,
+          title: manualTitle.trim(),
+          artist: manualArtist.trim() || "Desconhecido",
+          slides: parsedSlides
+        };
+        setSelectedSong(newSong);
+        await updateRoomActiveState(room.id, newSongId, 0);
+
+        setSearchMessage(`"${newSong.title}" adicionado com sucesso à biblioteca!`);
+      }
 
       // Reset form and close modal
       setManualTitle("");
       setManualArtist("");
       setManualLyrics("");
+      setEditingSongId(null);
       setShowManualModal(false);
 
-      // Instantly select the manually added song
-      const newSong: Song = {
-        id: newSongId,
-        title: manualTitle.trim(),
-        artist: manualArtist.trim() || "Desconhecido",
-        slides: parsedSlides
-      };
-      setSelectedSong(newSong);
-      await updateRoomActiveState(room.id, newSongId, 0);
-
-      setSearchMessage(`"${newSong.title}" adicionado manualmente com sucesso!`);
       setTimeout(() => setSearchMessage(""), 5000);
     } catch (err: any) {
       console.error(err);
@@ -484,6 +568,19 @@ export default function LeaderDashboard({ room, onDisconnect }: LeaderDashboardP
   };
 
   const handleToggleServiceActive = async (serviceId: string, currentActive: boolean) => {
+    if (!currentActive) {
+      // User is attempting to activate this service
+      const targetService = servicesList.find(s => s.id === serviceId);
+      if (targetService) {
+        const hasSentenca = (targetService.items || []).some(
+          item => item.liturgyCategory === "Sentença Introdutória"
+        );
+        if (!hasSentenca) {
+          alert("⚠️ Não é possível ativar este culto:\nA liturgia exige pelo menos 1 louvor cadastrado na 'Sentença Introdutória'!");
+          return;
+        }
+      }
+    }
     try {
       await setActiveService(room.id, currentActive ? null : serviceId);
     } catch (err) {
@@ -491,18 +588,21 @@ export default function LeaderDashboard({ room, onDisconnect }: LeaderDashboardP
     }
   };
 
-  const handleDeleteService = async (serviceId: string) => {
-    if (!confirm("Tem certeza que deseja remover este culto? Isso apagará toda a programação dele.")) {
-      return;
-    }
-    try {
-      await deleteService(serviceId);
-      if (selectedService?.id === serviceId) {
-        setSelectedService(null);
+  const handleDeleteService = (serviceId: string) => {
+    showConfirmation(
+      "Remover Culto",
+      "Tem certeza que deseja remover este culto? Isso apagará toda a programação dele permanentemente.",
+      async () => {
+        try {
+          await deleteService(serviceId);
+          if (selectedService?.id === serviceId) {
+            setSelectedService(null);
+          }
+        } catch (err) {
+          console.error(err);
+        }
       }
-    } catch (err) {
-      console.error(err);
-    }
+    );
   };
 
   const handleAddSongToService = async (song: Song) => {
@@ -595,52 +695,94 @@ export default function LeaderDashboard({ room, onDisconnect }: LeaderDashboardP
     return () => unsubscribe();
   }, [room.activeSongId]);
 
-  // Handle adding song through Gemini Search
-  const handleGeminiSearch = async (e: React.FormEvent) => {
+  // Handle adding song through Inline Form
+  const handleSaveInlineSong = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!searchQuery.trim()) return;
+    if (!inlineTitle.trim()) {
+      alert("Por favor, informe o título do louvor.");
+      return;
+    }
+    if (!inlineLyrics.trim()) {
+      alert("Por favor, digite ou cole a letra do louvor.");
+      return;
+    }
 
-    setIsSearchingGemini(true);
-    setSearchMessage("Buscando letra e estruturando com a Inteligência do Gemini...");
-
+    setIsSavingInline(true);
     try {
-      const response = await fetch(`/api/lyrics/search?q=${encodeURIComponent(searchQuery)}`);
-      if (!response.ok) {
-        throw new Error("Não foi possível encontrar a música");
-      }
-      const data = await response.json();
-      
-      if (data.error) {
-        throw new Error(data.error);
+      const parsedSlides = parsePastedLyrics(inlineLyrics);
+      if (parsedSlides.length === 0) {
+        throw new Error("A letra informada não possui linhas de texto válidas.");
       }
 
-      // Add to Firestore database
+      // Create flow
       const newSongId = await addSongToLibrary({
-        title: data.title || searchQuery,
-        artist: data.artist || "Desconhecido",
-        slides: data.slides || []
+        title: inlineTitle.trim(),
+        artist: inlineArtist.trim() || "Desconhecido",
+        slides: parsedSlides
       });
 
-      setSearchQuery("");
-      setSearchMessage(`"${data.title}" adicionada com sucesso à biblioteca!`);
-      
-      // Auto select the new song for projection
+      // Instantly select the manually added song
       const newSong: Song = {
         id: newSongId,
-        title: data.title,
-        artist: data.artist,
-        slides: data.slides
+        title: inlineTitle.trim(),
+        artist: inlineArtist.trim() || "Desconhecido",
+        slides: parsedSlides
       };
       setSelectedSong(newSong);
       await updateRoomActiveState(room.id, newSongId, 0);
 
+      setSearchMessage(`"${newSong.title}" adicionado com sucesso à biblioteca!`);
+      
+      // Reset form
+      setInlineTitle("");
+      setInlineArtist("");
+      setInlineLyrics("");
+
       setTimeout(() => setSearchMessage(""), 5000);
     } catch (err: any) {
       console.error(err);
-      setSearchMessage("Erro ao buscar letra: " + (err.message || "Tente outro nome."));
+      alert("Erro ao cadastrar louvor: " + (err.message || "Tente novamente."));
     } finally {
-      setIsSearchingGemini(false);
+      setIsSavingInline(false);
     }
+  };
+
+  const handleDeleteSongFromLibrary = (songId: string, songTitle: string) => {
+    showConfirmation(
+      "Remover Louvor",
+      `Deseja realmente remover o louvor "${songTitle}" permanentemente da biblioteca da igreja?`,
+      async () => {
+        try {
+          await deleteSongFromLibrary(songId);
+          if (previewSong?.id === songId) {
+            setPreviewSong(null);
+          }
+          if (selectedSong?.id === songId) {
+            setSelectedSong(null);
+          }
+          setSearchMessage(`"${songTitle}" foi removido com sucesso.`);
+          setTimeout(() => setSearchMessage(""), 5000);
+        } catch (err: any) {
+          console.error("Erro ao excluir música:", err);
+          alert(`Não foi possível remover o louvor: ${err.message || err}`);
+        }
+      }
+    );
+  };
+
+  const handleEditSongClick = (song: Song) => {
+    setEditingSongId(song.id);
+    setManualTitle(song.title);
+    setManualArtist(song.artist);
+    
+    // Reconstruct raw lyrics text from slides
+    const lyricsReconstructed = song.slides.map(slide => {
+      const typeHeader = slide.type && slide.type !== "Normal" && slide.type !== "Estrofe" ? `[${slide.type}]\n` : "";
+      return typeHeader + slide.lines.join("\n");
+    }).join("\n\n");
+    
+    setManualLyrics(lyricsReconstructed);
+    setShowManualModal(true);
   };
 
   const handleSelectSong = async (song: Song) => {
@@ -695,7 +837,8 @@ export default function LeaderDashboard({ room, onDisconnect }: LeaderDashboardP
           title: annTitle.trim(),
           lines,
           type: annType,
-          order
+          order,
+          imageUrl: annImageUrl.trim()
         });
       } else {
         await addAnnouncement({
@@ -703,11 +846,13 @@ export default function LeaderDashboard({ room, onDisconnect }: LeaderDashboardP
           title: annTitle.trim(),
           lines,
           type: annType,
-          order
+          order,
+          imageUrl: annImageUrl.trim()
         });
       }
       setAnnTitle("");
       setAnnLinesText("");
+      setAnnImageUrl("");
       setEditingAnnId(null);
       setShowAnnModal(false);
     } catch (err) {
@@ -722,17 +867,22 @@ export default function LeaderDashboard({ room, onDisconnect }: LeaderDashboardP
     setAnnTitle(ann.title);
     setAnnLinesText(ann.lines.join("\n"));
     setAnnType(ann.type);
+    setAnnImageUrl(ann.imageUrl || "");
     setShowAnnModal(true);
   };
 
-  const handleDeleteAnnouncementClick = async (id: string) => {
-    if (confirm("Deseja realmente excluir este aviso?")) {
-      try {
-        await deleteAnnouncement(id);
-      } catch (err) {
-        console.error("Erro ao excluir aviso:", err);
+  const handleDeleteAnnouncementClick = (id: string) => {
+    showConfirmation(
+      "Excluir Aviso de Mídia",
+      "Deseja realmente excluir este aviso permanentemente do sistema?",
+      async () => {
+        try {
+          await deleteAnnouncement(id);
+        } catch (err) {
+          console.error("Erro ao excluir aviso:", err);
+        }
       }
-    }
+    );
   };
 
   const handleToggleAnnouncementMode = async (type: "pre-service" | "post-service" | "none") => {
@@ -940,11 +1090,39 @@ export default function LeaderDashboard({ room, onDisconnect }: LeaderDashboardP
             <Presentation className="w-3.5 h-3.5" />
             <span className="hidden sm:inline">Projetar</span>
           </button>
+
+          <button
+            onClick={toggleFullscreen}
+            className="p-2 bg-white hover:bg-natural-bg text-natural-text border border-natural-border hover:border-natural-sage/30 rounded-xl transition flex items-center justify-center cursor-pointer shadow-sm"
+            title={isFullscreen ? "Sair da Tela Cheia" : "Tela Cheia"}
+          >
+            {isFullscreen ? <Minimize2 className="w-4 h-4 text-natural-sage" /> : <Maximize2 className="w-4 h-4 text-natural-sage" />}
+          </button>
+
+          <button
+            onClick={onDisconnect}
+            className="px-3 py-2 bg-red-50 hover:bg-red-100 text-red-600 border border-red-100 hover:border-red-300 rounded-xl transition text-xs font-bold flex items-center space-x-1.5 cursor-pointer shadow-sm"
+            title="Sair da Sala"
+          >
+            <LogOut className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">Sair</span>
+          </button>
         </div>
       </header>
 
       {/* Navigation Tabs */}
       <div className="bg-white border-b border-natural-border px-6 flex flex-wrap justify-start items-center gap-x-1 shadow-sm">
+        <button
+          onClick={() => setActiveTab("songs")}
+          className={`py-3 px-4 text-xs font-bold uppercase tracking-wider flex items-center space-x-2 border-b-2 transition-all cursor-pointer ${
+            activeTab === "songs"
+              ? "border-natural-sage text-natural-sage"
+              : "border-transparent text-natural-text/50 hover:text-natural-sage"
+          }`}
+        >
+          <Music className="w-4 h-4" />
+          <span>🎶 Louvores</span>
+        </button>
         <button
           onClick={() => setActiveTab("projection")}
           className={`py-3 px-4 text-xs font-bold uppercase tracking-wider flex items-center space-x-2 border-b-2 transition-all cursor-pointer ${
@@ -954,7 +1132,10 @@ export default function LeaderDashboard({ room, onDisconnect }: LeaderDashboardP
           }`}
         >
           <Tv className="w-4 h-4" />
-          <span>📽️ Louvores e Projeção</span>
+          <span>📽️ Projeção</span>
+          {room.activeSongId && (
+            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+          )}
         </button>
         <button
           onClick={() => setActiveTab("services")}
@@ -1015,136 +1196,328 @@ export default function LeaderDashboard({ room, onDisconnect }: LeaderDashboardP
       </div>
 
       {/* Main Content Area */}
-      {activeTab === "projection" && (
-        <div className="flex-1 grid grid-cols-1 lg:grid-cols-12 gap-6 p-6 overflow-hidden max-w-7xl w-full mx-auto">
-        
-        {/* Left column: Song Library & Gemini Search (4 cols) */}
-        <div className="lg:col-span-4 flex flex-col space-y-6">
-          
-          {/* Quick Search and Add bar */}
-          <div className="bg-white border border-natural-border p-5 rounded-2xl shadow-sm">
-            <h3 className="text-xs font-bold text-natural-sage uppercase tracking-wider mb-3 flex items-center space-x-1.5">
-              <Sparkles className="w-3.5 h-3.5" />
-              <span>Adicionar Novo Louvor</span>
-            </h3>
-            <form onSubmit={handleGeminiSearch} className="space-y-3">
-              <div className="relative">
-                <input
-                  type="text"
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="Nome do louvor ou link do Letras.mus.br..."
-                  className="w-full pl-10 pr-4 py-2.5 bg-natural-bg border border-natural-border rounded-xl focus:outline-none focus:border-natural-sage text-natural-text placeholder-natural-text/40 text-xs transition"
-                  disabled={isSearchingGemini}
-                />
-                <Search className="absolute left-3 top-3 w-4 h-4 text-natural-sage/50" />
-              </div>
-              <p className="text-[10px] text-natural-text/50 leading-tight px-1">
-                💡 Cole um link do <strong>letras.mus.br</strong> ou pesquise pelo nome para extrair e estruturar em slides automaticamente.
+      {activeTab === "songs" && (
+        <div className="flex-1 flex flex-col overflow-hidden">
+          {/* Library Header */}
+          <div className="bg-white border-b border-natural-border px-6 py-4 flex flex-col sm:flex-row justify-between items-center gap-4">
+            <div>
+              <h2 className="text-base font-serif italic font-bold text-natural-text">📚 Biblioteca Geral de Louvores</h2>
+              <p className="text-xs text-natural-text/60 mt-0.5 font-medium">
+                Consulte ou cadastre os louvores que serão projetados nos cultos de maneira rápida e organizada.
               </p>
-              <button
-                type="submit"
-                className="w-full py-2 bg-natural-sage/10 hover:bg-natural-sage/20 border border-natural-sage/20 text-natural-sage rounded-xl transition text-xs font-bold flex items-center justify-center space-x-2 cursor-pointer"
-                disabled={isSearchingGemini}
-              >
-                {isSearchingGemini ? (
-                  <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                ) : (
-                  <Plus className="w-3.5 h-3.5" />
-                )}
-                <span>{isSearchingGemini ? "Pesquisando..." : "Pesquisar & Adicionar"}</span>
-              </button>
-            </form>
-
-            {searchMessage && (
-              <div className="mt-3 text-[11px] text-natural-text/70 bg-natural-bg p-2.5 rounded-lg border border-natural-border text-center font-mono animate-fade-in">
-                {searchMessage}
-              </div>
-            )}
-
-            <div className="pt-3 mt-3 border-t border-natural-border/60 flex items-center justify-between text-[11px]">
-              <span className="text-natural-text/50 font-medium">Não encontrou?</span>
-              <button
-                onClick={() => setShowManualModal(true)}
-                className="text-natural-sage font-bold hover:text-natural-sage-hover cursor-pointer flex items-center space-x-1"
-                type="button"
-              >
-                <Plus className="w-3 h-3" />
-                <span>Colar letra manualmente</span>
-              </button>
+            </div>
+            
+            <div className="flex items-center gap-2">
+              <span className="px-3.5 py-1.5 bg-natural-bg border border-natural-border text-xs font-bold text-natural-sage rounded-xl font-serif italic">
+                {songsList.length} {songsList.length === 1 ? "louvor catalogado" : "louvores catalogados"}
+              </span>
             </div>
           </div>
 
-          {/* Songs Library */}
-          <div className="bg-white border border-natural-border rounded-2xl flex-1 flex flex-col overflow-hidden min-h-[300px] shadow-sm">
-            <div className="p-4 border-b border-natural-border flex justify-between items-center">
-              <h3 className="text-xs font-bold text-natural-sage uppercase tracking-wider flex items-center space-x-1.5">
-                <Music className="w-3.5 h-3.5" />
-                <span>Biblioteca da Igreja</span>
-              </h3>
-              <span className="px-2 py-0.5 bg-natural-bg border border-natural-border text-[10px] text-natural-text/70 font-mono rounded font-semibold uppercase">
-                {songsList.length} louvores
-              </span>
+          <div className="flex-1 grid grid-cols-1 lg:grid-cols-12 gap-6 p-6 overflow-y-auto max-w-7xl w-full mx-auto">
+            {/* Left Column: Register New Song Card */}
+            <div className="lg:col-span-4 flex flex-col space-y-4">
+              <div className="bg-white border border-natural-border p-5 rounded-2xl shadow-sm">
+                <div className="mb-4">
+                  <h3 className="text-sm font-serif italic font-bold text-natural-text flex items-center space-x-1.5">
+                    <Plus className="w-4 h-4 text-natural-sage" />
+                    <span>Cadastrar Novo Louvor</span>
+                  </h3>
+                  <p className="text-[11px] text-natural-text/60 mt-1 font-medium leading-relaxed">
+                    Preencha as informações do louvor. A letra será dividida automaticamente em slides elegantes.
+                  </p>
+                </div>
+
+                <form onSubmit={handleSaveInlineSong} className="space-y-4">
+                  <div>
+                    <label className="block text-[10px] font-bold text-natural-text/60 uppercase tracking-wider mb-1.5">Título do Louvor *</label>
+                    <input
+                      type="text"
+                      value={inlineTitle}
+                      onChange={(e) => setInlineTitle(e.target.value)}
+                      placeholder="Ex: Grandioso És Tu"
+                      className="w-full px-3.5 py-2.5 bg-natural-bg border border-natural-border rounded-xl focus:outline-none focus:border-natural-sage text-xs transition text-natural-text font-medium"
+                      required
+                    />
+                  </div>
+                  
+                  <div>
+                    <label className="block text-[10px] font-bold text-natural-text/60 uppercase tracking-wider mb-1.5">Ministério / Artista</label>
+                    <input
+                      type="text"
+                      value={inlineArtist}
+                      onChange={(e) => setInlineArtist(e.target.value)}
+                      placeholder="Ex: Harpa Cristã"
+                      className="w-full px-3.5 py-2.5 bg-natural-bg border border-natural-border rounded-xl focus:outline-none focus:border-natural-sage text-xs transition text-natural-text font-medium"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] font-bold text-natural-text/60 uppercase tracking-wider mb-1.5">Letra Completa *</label>
+                    <textarea
+                      value={inlineLyrics}
+                      onChange={(e) => setInlineLyrics(e.target.value)}
+                      placeholder="Digite ou cole a letra aqui.&#10;Deixe uma linha em branco entre cada estrofe para separar os slides automaticamente."
+                      className="w-full h-48 px-3.5 py-2.5 bg-natural-bg border border-natural-border rounded-xl focus:outline-none focus:border-natural-sage text-xs transition text-natural-text font-medium resize-none font-sans leading-relaxed"
+                      required
+                    />
+                  </div>
+
+                  {searchMessage && (
+                    <div className="text-[11px] text-natural-text/70 bg-natural-bg p-2.5 rounded-lg border border-natural-border text-center font-mono animate-fade-in">
+                      {searchMessage}
+                    </div>
+                  )}
+
+                  <button
+                    type="submit"
+                    className="w-full py-2.5 bg-natural-sage hover:bg-natural-sage-hover text-white rounded-xl transition text-xs font-bold flex items-center justify-center space-x-2 cursor-pointer shadow-sm font-sans"
+                    disabled={isSavingInline}
+                  >
+                    {isSavingInline ? (
+                      <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                    ) : (
+                      <Plus className="w-3.5 h-3.5" />
+                    )}
+                    <span>{isSavingInline ? "Cadastrando..." : "Cadastrar na Biblioteca"}</span>
+                  </button>
+                </form>
+              </div>
+
+              {/* Formatting Tips Card */}
+              <div className="bg-natural-sage/5 border border-natural-sage/10 p-5 rounded-2xl text-xs space-y-2.5">
+                <h4 className="font-bold text-natural-sage flex items-center gap-1.5 uppercase tracking-wider text-[10px]">
+                  📌 Dica de Formatação
+                </h4>
+                <p className="text-natural-text/70 leading-relaxed text-[11px]">
+                  Para melhor legibilidade na projeção, dividimos automaticamente a letra em slides de no máximo 4 linhas.
+                </p>
+                <p className="text-natural-text/70 leading-relaxed text-[11px]">
+                  Use uma linha em branco para criar um novo slide. Se quiser nomear uma parte, use <code className="font-mono bg-natural-sage/10 px-1 py-0.5 rounded text-natural-sage">[Coro]</code>, <code className="font-mono bg-natural-sage/10 px-1 py-0.5 rounded text-natural-sage">[Ponte]</code> ou similar no início da estrofe.
+                </p>
+              </div>
             </div>
 
-            <div className="flex-1 overflow-y-auto p-3 space-y-1">
-              {songsList.length === 0 ? (
-                <div className="text-center py-8 text-xs text-natural-text/50 font-medium">
-                  Sem músicas cadastradas. Pesquise acima para adicionar!
+            {/* Right Column: Library Catalog (Grid of cards) */}
+            <div className="lg:col-span-8 flex flex-col space-y-4">
+              {/* Filter bar */}
+              <div className="bg-white border border-natural-border p-4 rounded-xl shadow-sm flex items-center justify-between gap-4">
+                <div className="relative flex-1 max-w-md">
+                  <input
+                    type="text"
+                    value={librarySearchQuery}
+                    onChange={(e) => setLibrarySearchQuery(e.target.value)}
+                    placeholder="Filtrar músicas da biblioteca..."
+                    className="w-full pl-9 pr-4 py-2 bg-natural-bg border border-natural-border rounded-lg focus:outline-none focus:border-natural-sage text-natural-text placeholder-natural-text/40 text-xs transition"
+                  />
+                  <Search className="absolute left-3 top-2.5 w-3.5 h-3.5 text-natural-text/40" />
                 </div>
-              ) : (
-                songsList.map((song) => {
-                  const isCurrentProjection = room.activeSongId === song.id;
-                  return (
-                    <div
-                      key={song.id}
-                      className={`w-full p-2 px-3 rounded-xl transition-all flex items-center justify-between border ${
-                        isCurrentProjection
-                          ? "bg-natural-sage/10 border-natural-sage/30 text-natural-sage"
-                          : "bg-transparent border-transparent hover:bg-natural-bg text-natural-text/80"
-                      }`}
-                    >
-                      <button
-                        onClick={() => handleSelectSong(song)}
-                        className="flex-1 text-left truncate pr-2 cursor-pointer focus:outline-none"
-                      >
-                        <p className="font-serif font-bold text-sm tracking-tight text-natural-text hover:text-natural-sage">
-                          {song.title}
-                        </p>
-                        <p className="text-[10px] text-natural-text/50 font-medium tracking-wide uppercase mt-0.5">
+                <span className="text-[11px] font-mono font-bold text-natural-text/50 uppercase">
+                  Exibindo {songsList.filter(s => 
+                    s.title.toLowerCase().includes(librarySearchQuery.toLowerCase()) || 
+                    s.artist.toLowerCase().includes(librarySearchQuery.toLowerCase())
+                  ).length} de {songsList.length} louvores
+                </span>
+              </div>
+
+              {/* Grid view */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                {songsList.filter(s => 
+                  s.title.toLowerCase().includes(librarySearchQuery.toLowerCase()) || 
+                  s.artist.toLowerCase().includes(librarySearchQuery.toLowerCase())
+                ).length === 0 ? (
+                  <div className="col-span-full bg-white border border-natural-border rounded-xl p-12 text-center text-natural-text/40 text-xs flex flex-col items-center justify-center">
+                    <Music className="w-12 h-12 text-natural-sage/10 mb-2" />
+                    <p className="font-bold">Nenhum louvor encontrado</p>
+                    <p className="text-[11px] mt-1">Experimente mudar o termo de pesquisa ou adicione uma nova música ao catálogo.</p>
+                  </div>
+                ) : (
+                  songsList.filter(s => 
+                    s.title.toLowerCase().includes(librarySearchQuery.toLowerCase()) || 
+                    s.artist.toLowerCase().includes(librarySearchQuery.toLowerCase())
+                  ).map(song => (
+                    <div key={song.id} className="bg-white border border-natural-border p-4 rounded-xl shadow-sm flex flex-col justify-between hover:border-natural-sage/30 transition-all group">
+                      <div>
+                        <div className="flex justify-between items-start gap-2">
+                          <h4 className="font-serif font-bold text-base text-natural-text group-hover:text-natural-sage transition-colors line-clamp-1">
+                            {song.title}
+                          </h4>
+                          <span className="px-2 py-0.5 bg-natural-bg border border-natural-border text-[9px] font-bold text-natural-text/50 rounded font-mono uppercase shrink-0">
+                            {song.slides.length} slides
+                          </span>
+                        </div>
+                        <p className="text-xs text-natural-text/50 font-medium uppercase mt-0.5 tracking-wide truncate">
                           {song.artist}
                         </p>
-                      </button>
+                      </div>
 
-                      {/* Quick Add to Worship Service */}
-                      {selectedService && (
-                        <div className="flex items-center space-x-1.5 flex-shrink-0 pl-1">
-                          <select
-                            value={songLiturgyCategories[song.id] || "Momento de Louvor"}
-                            onChange={(e) => setSongLiturgyCategories(prev => ({ ...prev, [song.id]: e.target.value }))}
-                            className="px-1.5 py-0.5 bg-white border border-natural-border rounded text-[10px] text-natural-text/70 focus:outline-none focus:border-natural-sage max-w-[110px]"
-                            title="Escolher momento litúrgico"
-                          >
-                            {LITURGY_CATEGORIES.map(cat => (
-                              <option key={cat} value={cat}>{cat}</option>
-                            ))}
-                          </select>
-                          <button
-                            onClick={() => handleAddSongToService(song)}
-                            className="p-1 bg-natural-sage text-white rounded hover:bg-natural-sage-hover transition cursor-pointer"
-                            title={`Adicionar ao ${selectedService.title}`}
-                          >
-                            <Plus className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
-                      )}
+                      <div className="flex items-center justify-end gap-1.5 mt-4 pt-3 border-t border-natural-border/50">
+                        <button
+                          onClick={() => setViewingLibrarySong(song)}
+                          className="px-2.5 py-1 text-[11px] font-bold text-natural-sage hover:bg-natural-sage/10 rounded-lg transition flex items-center space-x-1 cursor-pointer border border-transparent"
+                        >
+                          <Eye className="w-3.5 h-3.5" />
+                          <span>Visualizar Letra</span>
+                        </button>
+                        <button
+                          onClick={() => handleEditSongClick(song)}
+                          className="px-2.5 py-1 text-[11px] font-bold text-natural-sage hover:bg-natural-sage/10 rounded-lg transition flex items-center space-x-1 cursor-pointer border border-transparent"
+                          title="Editar louvor"
+                        >
+                          <Edit3 className="w-3.5 h-3.5" />
+                          <span>Editar</span>
+                        </button>
+                        <button
+                          onClick={() => handleDeleteSongFromLibrary(song.id, song.title)}
+                          className="p-1.5 text-natural-text/40 hover:text-red-600 hover:bg-red-50 border border-transparent hover:border-red-100 rounded-lg transition cursor-pointer"
+                          title="Excluir da biblioteca"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
                     </div>
-                  );
-                })
-              )}
+                  ))
+                )}
+              </div>
             </div>
           </div>
         </div>
+      )}
+
+      {activeTab === "projection" && (
+        <div className="flex-1 grid grid-cols-1 lg:grid-cols-12 gap-6 p-6 overflow-hidden max-w-7xl w-full mx-auto">
+        
+          {/* Left Column (4 cols): Predefined Liturgy Skeleton */}
+          <div className="lg:col-span-4 flex flex-col space-y-6 overflow-hidden h-full">
+            <div className="bg-white border border-natural-border p-5 rounded-2xl shadow-sm flex flex-col h-full overflow-hidden min-h-[450px]">
+              <div className="border-b border-natural-border/60 pb-3 mb-4">
+                <h3 className="text-xs font-bold text-natural-sage uppercase tracking-wider flex items-center space-x-1.5 mb-1">
+                  <Calendar className="w-4 h-4" />
+                  <span>Roteiro Litúrgico do Culto</span>
+                </h3>
+                {selectedService ? (
+                  <div className="flex justify-between items-center">
+                    <p className="text-sm font-serif font-bold text-[#2D2D2A] truncate">
+                      {selectedService.title}
+                    </p>
+                    <span className="px-2 py-0.5 bg-natural-sage/10 text-natural-sage text-[9px] font-mono font-bold uppercase rounded">
+                      Predefinido
+                    </span>
+                  </div>
+                ) : (
+                  <p className="text-xs text-natural-text/50 font-medium">
+                    Nenhum culto selecionado
+                  </p>
+                )}
+              </div>
+
+              {/* Predefined Skeleton Steps List */}
+              <div className="flex-1 overflow-y-auto space-y-3.5 pr-1">
+                {!selectedService ? (
+                  <div className="text-center py-12 text-xs text-natural-text/50 font-medium">
+                    Nenhum culto selecionado.<br />Selecione ou crie um culto na aba <strong>⛪ Cultos</strong> para preencher e comandar a liturgia.
+                  </div>
+                ) : (
+                  LITURGY_CATEGORIES.map((category, index) => {
+                    const itemsForCategory = (selectedService.items || []).filter(item => item.liturgyCategory === category);
+                    const isSentenca = category === "Sentença Introdutória";
+                    const isMissingRequired = isSentenca && itemsForCategory.length === 0;
+
+                    return (
+                      <div key={category} className="space-y-1.5 border-b border-natural-border/30 pb-3 last:border-0 last:pb-0">
+                        {/* Step Header */}
+                        <div className="flex justify-between items-center">
+                          <span className="text-[10px] font-bold text-natural-text/50 uppercase tracking-wider flex items-center gap-1">
+                            <span>{index + 1}. {category}</span>
+                            {isSentenca && <span className="text-red-500 font-bold" title="Obrigatório pelo menos 1 louvor">*</span>}
+                          </span>
+                          
+                          {/* Add Song to this Slot button */}
+                          <button
+                            onClick={() => setShowSongSelectorForCategory(category)}
+                            className="px-2 py-0.5 bg-natural-bg hover:bg-natural-sage/10 text-[9px] font-bold text-natural-sage border border-natural-border hover:border-natural-sage/30 rounded-md transition cursor-pointer flex items-center space-x-1"
+                          >
+                            <Plus className="w-2.5 h-2.5" />
+                            <span>Vincular</span>
+                          </button>
+                        </div>
+
+                        {/* Scaled Songs for this slot */}
+                        {itemsForCategory.length > 0 ? (
+                          <div className="space-y-1.5">
+                            {itemsForCategory.map(item => {
+                              const isCurrentProjection = room.activeSongId === item.songId;
+                              return (
+                                <div
+                                  key={item.id}
+                                  className={`group w-full p-2.5 rounded-xl border text-left transition flex items-center justify-between relative ${
+                                    isCurrentProjection
+                                      ? "bg-natural-sage/10 border-natural-sage text-natural-sage shadow-sm"
+                                      : "bg-white border-natural-border hover:bg-natural-bg/50 text-natural-text/85"
+                                  }`}
+                                >
+                                  <button
+                                    onClick={() => handleProjectServiceSong(item)}
+                                    className="flex-1 text-left truncate cursor-pointer mr-1 focus:outline-none"
+                                  >
+                                    <div className="flex items-center space-x-1">
+                                      <h4 className="font-serif font-bold text-xs truncate">
+                                        {item.songTitle}
+                                      </h4>
+                                      {isCurrentProjection && (
+                                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse shrink-0" />
+                                      )}
+                                    </div>
+                                    <p className="text-[9px] text-natural-text/50 font-medium uppercase mt-0.5 tracking-wide truncate">
+                                      {item.songArtist}
+                                    </p>
+                                  </button>
+
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleRemoveSongFromService(item.id);
+                                    }}
+                                    className="p-1 text-natural-text/30 hover:text-red-600 rounded hover:bg-red-50 border border-transparent transition cursor-pointer"
+                                    title="Desvincular deste momento"
+                                  >
+                                    <Trash2 className="w-3 h-3" />
+                                  </button>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        ) : (
+                          /* Empty slot skeleton state */
+                          <div 
+                            onClick={() => setShowSongSelectorForCategory(category)}
+                            className={`border border-dashed rounded-xl p-3 text-center transition cursor-pointer ${
+                              isMissingRequired
+                                ? "border-amber-400 bg-amber-50/30 text-amber-800 hover:bg-amber-50/60"
+                                : "border-natural-border hover:border-natural-sage/30 hover:bg-natural-bg/30 text-natural-text/40"
+                            }`}
+                          >
+                            <p className="text-[10px] font-medium leading-relaxed">
+                              {isMissingRequired 
+                                ? "⚠️ Sentença Introdutória requer pelo menos 1 louvor!" 
+                                : `Nenhum louvor vinculado ao momento ${category}`}
+                            </p>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+
+              {/* Legend info */}
+              {selectedService && (
+                <div className="pt-3 border-t border-natural-border/60 mt-3 text-[9px] text-natural-text/50 font-medium leading-relaxed bg-natural-bg/20 p-2.5 rounded-xl">
+                  💡 <strong>Passo Obrigatório:</strong> O momento <strong>Sentença Introdutória</strong> precisa ter pelo menos 1 louvor vinculado para que o culto possa ser ativado e salvo com sucesso.
+                </div>
+              )}
+            </div>
+          </div>
 
         {/* Right column: Active Song Projection Controls & Live Lyrics (8 cols) */}
         <div className="lg:col-span-8 flex flex-col space-y-6">
@@ -1249,12 +1622,21 @@ export default function LeaderDashboard({ room, onDisconnect }: LeaderDashboardP
                   Limpar
                 </button>
                 {selectedSong && (
-                  <button
-                    onClick={handleClearProject}
-                    className="px-2 py-1 bg-white/5 border border-white/10 hover:bg-red-500/10 hover:border-red-500/30 hover:text-red-400 text-slate-300 rounded text-[10px] font-bold uppercase tracking-wider cursor-pointer"
-                  >
-                    Fechar
-                  </button>
+                  <>
+                    <button
+                      onClick={() => handleEditSongClick(selectedSong)}
+                      className="px-2 py-1 bg-white/5 border border-white/10 hover:bg-natural-sage/20 hover:border-natural-sage/40 hover:text-white text-slate-300 rounded text-[10px] font-bold uppercase tracking-wider cursor-pointer"
+                      title="Editar letra do louvor ativamente"
+                    >
+                      Editar
+                    </button>
+                    <button
+                      onClick={handleClearProject}
+                      className="px-2 py-1 bg-white/5 border border-white/10 hover:bg-red-500/10 hover:border-red-500/30 hover:text-red-400 text-slate-300 rounded text-[10px] font-bold uppercase tracking-wider cursor-pointer"
+                    >
+                      Fechar
+                    </button>
+                  </>
                 )}
               </div>
 
@@ -1647,6 +2029,7 @@ export default function LeaderDashboard({ room, onDisconnect }: LeaderDashboardP
                 setEditingAnnId(null);
                 setAnnTitle("");
                 setAnnLinesText("");
+                setAnnImageUrl("");
                 setAnnType("pre-service");
                 setShowAnnModal(true);
               }}
@@ -1738,10 +2121,20 @@ export default function LeaderDashboard({ room, onDisconnect }: LeaderDashboardP
                             </button>
                           </div>
                         </div>
-                        <div className="text-[11px] font-serif italic text-natural-text/70 pl-2 border-l-2 border-cyan-200 space-y-0.5">
-                          {ann.lines.map((line, lidx) => (
-                            <p key={lidx}>{line}</p>
-                          ))}
+                        <div className="flex gap-4 items-start">
+                          {ann.imageUrl && (
+                            <img 
+                              src={ann.imageUrl} 
+                              alt={ann.title} 
+                              className="w-16 h-16 rounded-lg object-cover border border-natural-border shrink-0" 
+                              onError={(e) => { e.currentTarget.style.display = 'none'; }}
+                            />
+                          )}
+                          <div className="text-[11px] font-serif italic text-natural-text/70 pl-2 border-l-2 border-cyan-200 space-y-0.5 flex-1">
+                            {ann.lines.map((line, lidx) => (
+                              <p key={lidx}>{line}</p>
+                            ))}
+                          </div>
                         </div>
                       </div>
                     ))
@@ -1897,10 +2290,20 @@ export default function LeaderDashboard({ room, onDisconnect }: LeaderDashboardP
                               </button>
                             </div>
                           </div>
-                          <div className="text-[11px] font-serif italic text-natural-text/70 pl-2 border-l-2 border-emerald-300 space-y-0.5">
-                            {ann.lines.map((line, lidx) => (
-                              <p key={lidx}>{line}</p>
-                            ))}
+                          <div className="flex gap-4 items-start">
+                            {ann.imageUrl && (
+                              <img 
+                                src={ann.imageUrl} 
+                                alt={ann.title} 
+                                className="w-16 h-16 rounded-lg object-cover border border-natural-border shrink-0" 
+                                onError={(e) => { e.currentTarget.style.display = 'none'; }}
+                              />
+                            )}
+                            <div className="text-[11px] font-serif italic text-natural-text/70 pl-2 border-l-2 border-emerald-300 space-y-0.5 flex-1">
+                              {ann.lines.map((line, lidx) => (
+                                <p key={lidx}>{line}</p>
+                              ))}
+                            </div>
                           </div>
                         </div>
                       );
@@ -2392,9 +2795,13 @@ export default function LeaderDashboard({ room, onDisconnect }: LeaderDashboardP
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm animate-fade-in">
           <div className="bg-white border border-natural-border w-full max-w-lg p-6 rounded-2xl shadow-2xl relative max-h-[90vh] flex flex-col">
             <div className="mb-4">
-              <h3 className="text-lg font-serif italic font-bold text-natural-text">Adicionar Louvor Manualmente</h3>
+              <h3 className="text-lg font-serif italic font-bold text-natural-text">
+                {editingSongId ? "Editar Louvor" : "Adicionar/Revisar Louvor"}
+              </h3>
               <p className="text-xs text-natural-text/60 font-medium">
-                Digite ou cole a letra completa do louvor. Ela será dividida automaticamente em slides elegantes.
+                {editingSongId 
+                  ? "Ajuste a letra ou informações do louvor. A letra será reestruturada em slides ao salvar." 
+                  : "Digite ou cole a letra completa do louvor. Ela será dividida automaticamente em slides elegantes."}
               </p>
             </div>
 
@@ -2457,6 +2864,7 @@ export default function LeaderDashboard({ room, onDisconnect }: LeaderDashboardP
                     setManualTitle("");
                     setManualArtist("");
                     setManualLyrics("");
+                    setEditingSongId(null);
                     setShowManualModal(false);
                   }}
                   className="flex-1 py-2.5 bg-natural-cream hover:bg-natural-cream-hover text-natural-text rounded-xl text-xs font-semibold transition cursor-pointer border border-natural-border"
@@ -2474,7 +2882,7 @@ export default function LeaderDashboard({ room, onDisconnect }: LeaderDashboardP
                       <span>Salvando...</span>
                     </>
                   ) : (
-                    <span>Adicionar à Biblioteca</span>
+                    <span>{editingSongId ? "Salvar Alterações" : "Salvar Louvor"}</span>
                   )}
                 </button>
               </div>
@@ -2620,6 +3028,35 @@ export default function LeaderDashboard({ room, onDisconnect }: LeaderDashboardP
                   placeholder="Seja muito bem-vindo!&#10;Nosso culto iniciará em breve.&#10;Prepare seu coração!"
                   className="w-full px-3 py-2 bg-natural-bg border border-natural-border rounded-xl focus:outline-none focus:border-natural-sage text-natural-text text-xs transition font-mono"
                 />
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-bold text-natural-sage uppercase tracking-wider mb-1">
+                  URL da Imagem (Opcional - JPEG, PNG, etc.)
+                </label>
+                <input
+                  type="url"
+                  value={annImageUrl}
+                  onChange={(e) => setAnnImageUrl(e.target.value)}
+                  placeholder="https://exemplo.com/imagem.jpg"
+                  className="w-full px-3 py-2 bg-natural-bg border border-natural-border rounded-xl focus:outline-none focus:border-natural-sage text-natural-text text-xs transition"
+                />
+                <p className="text-[9px] text-natural-text/50 mt-1 leading-normal">
+                  Insira o link direto de uma imagem para exibir no Datashow ao lado da mensagem.
+                </p>
+                {annImageUrl.trim() && (
+                  <div className="mt-2 p-2 bg-natural-bg border border-natural-border/60 rounded-xl flex items-center justify-between">
+                    <span className="text-[10px] text-natural-text/60 font-medium truncate max-w-[200px]">
+                      {annImageUrl}
+                    </span>
+                    <img 
+                      src={annImageUrl.trim()} 
+                      alt="Preview" 
+                      className="w-8 h-8 rounded-lg object-cover border border-natural-border"
+                      onError={(e) => { (e.currentTarget as HTMLImageElement).src = "https://placehold.co/100x100?text=Erro"; }}
+                    />
+                  </div>
+                )}
               </div>
 
               <div className="flex items-center gap-3 pt-2">
@@ -2821,6 +3258,205 @@ export default function LeaderDashboard({ room, onDisconnect }: LeaderDashboardP
               </div>
             )}
 
+          </div>
+        </div>
+      )}
+
+      {/* Visualizar Letra na Biblioteca (Modal) */}
+      {viewingLibrarySong && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl border border-natural-border max-w-2xl w-full max-h-[85vh] flex flex-col overflow-hidden shadow-2xl animate-fade-in">
+            <div className="p-5 border-b border-natural-border bg-natural-bg/50 flex justify-between items-center">
+              <div>
+                <h3 className="text-base font-serif italic font-bold text-[#2D2D2A]">
+                  {viewingLibrarySong.title}
+                </h3>
+                <p className="text-xs text-natural-text/50 font-semibold uppercase mt-0.5 tracking-wider">
+                  Por {viewingLibrarySong.artist}
+                </p>
+              </div>
+              <button
+                onClick={() => setViewingLibrarySong(null)}
+                className="p-1.5 hover:bg-natural-cream rounded-xl text-natural-text/50 hover:text-natural-text transition cursor-pointer text-sm font-bold"
+              >
+                Fechar
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-6 space-y-4 bg-[#FDFDFB]">
+              {viewingLibrarySong.slides.map((slide, index) => (
+                <div key={index} className="p-4 bg-white border border-natural-border rounded-2xl shadow-sm">
+                  <span className="text-[10px] font-bold uppercase tracking-wider font-mono text-natural-text/40 block border-b border-natural-border/60 pb-1.5 mb-2">
+                    Slide {index + 1} • {slide.type}
+                  </span>
+                  <div className="space-y-1 font-serif text-center w-full py-2 italic font-medium text-natural-text">
+                    {slide.lines.map((line, idx) => (
+                      <p key={idx} className="text-sm leading-relaxed">{line}</p>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+            
+            <div className="p-4 border-t border-natural-border bg-natural-bg/30 flex justify-center items-center gap-3">
+              <button
+                onClick={() => {
+                  const songToEdit = viewingLibrarySong;
+                  setViewingLibrarySong(null);
+                  handleEditSongClick(songToEdit);
+                }}
+                className="px-6 py-2 bg-natural-cream hover:bg-natural-cream-hover text-natural-text border border-natural-border rounded-xl text-xs font-semibold transition cursor-pointer flex items-center space-x-1.5"
+              >
+                <Edit3 className="w-3.5 h-3.5" />
+                <span>Editar Letra</span>
+              </button>
+              <button
+                onClick={() => setViewingLibrarySong(null)}
+                className="px-6 py-2 bg-natural-sage hover:bg-natural-sage-hover text-white rounded-xl text-xs font-bold transition shadow-sm cursor-pointer"
+              >
+                Concluído
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Song Selector Modal for Predefined Skeleton Steps */}
+      {showSongSelectorForCategory && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl border border-natural-border max-w-xl w-full max-h-[80vh] flex flex-col overflow-hidden shadow-2xl animate-fade-in">
+            {/* Header */}
+            <div className="p-5 border-b border-natural-border bg-natural-bg/50 flex justify-between items-center">
+              <div>
+                <h3 className="text-sm font-bold text-natural-sage uppercase tracking-wider">
+                  Escalar Louvor no Culto
+                </h3>
+                <p className="text-xs text-natural-text/60 mt-0.5">
+                  Escolha um louvor da biblioteca para o momento: <strong className="text-natural-text">{showSongSelectorForCategory}</strong>
+                </p>
+              </div>
+              <button
+                onClick={() => {
+                  setShowSongSelectorForCategory(null);
+                  setSongSelectorSearch("");
+                }}
+                className="p-1.5 hover:bg-natural-cream rounded-xl text-natural-text/50 hover:text-natural-text transition cursor-pointer text-xs font-bold"
+              >
+                Fechar
+              </button>
+            </div>
+
+            {/* Search Bar inside selector */}
+            <div className="p-4 border-b border-natural-border bg-[#FDFDFB]">
+              <div className="relative">
+                <input
+                  type="text"
+                  value={songSelectorSearch}
+                  onChange={(e) => setSongSelectorSearch(e.target.value)}
+                  placeholder="Pesquisar por título ou artista..."
+                  className="w-full pl-9 pr-4 py-2 bg-natural-bg border border-natural-border rounded-xl focus:outline-none focus:border-natural-sage text-natural-text text-xs transition"
+                />
+                <Search className="absolute left-3 top-2.5 w-3.5 h-3.5 text-natural-text/40" />
+              </div>
+            </div>
+
+            {/* Song list inside selector */}
+            <div className="flex-1 overflow-y-auto p-4 space-y-1.5 bg-[#FDFDFB]">
+              {songsList.filter(s => 
+                s.title.toLowerCase().includes(songSelectorSearch.toLowerCase()) || 
+                s.artist.toLowerCase().includes(songSelectorSearch.toLowerCase())
+              ).length === 0 ? (
+                <div className="text-center py-8 text-xs text-natural-text/40 font-semibold">
+                  Nenhum louvor correspondente na biblioteca.
+                </div>
+              ) : (
+                songsList.filter(s => 
+                  s.title.toLowerCase().includes(songSelectorSearch.toLowerCase()) || 
+                  s.artist.toLowerCase().includes(songSelectorSearch.toLowerCase())
+                ).map(song => (
+                  <button
+                    key={song.id}
+                    onClick={async () => {
+                      if (selectedService) {
+                        const newItem: ServiceItem = {
+                          id: Date.now().toString() + Math.random().toString(36).substring(2, 5),
+                          songId: song.id,
+                          songTitle: song.title,
+                          songArtist: song.artist,
+                          liturgyCategory: showSongSelectorForCategory
+                        };
+                        const updatedItems = [...(selectedService.items || []), newItem];
+                        try {
+                          await updateService(selectedService.id, { items: updatedItems });
+                        } catch (err) {
+                          console.error(err);
+                          alert("Erro ao escalar música.");
+                        }
+                      }
+                      setShowSongSelectorForCategory(null);
+                      setSongSelectorSearch("");
+                    }}
+                    className="w-full text-left p-3 hover:bg-natural-sage/10 border border-transparent hover:border-natural-sage/20 rounded-xl transition flex items-center justify-between group cursor-pointer"
+                  >
+                    <div>
+                      <h4 className="font-serif font-bold text-sm text-natural-text group-hover:text-natural-sage transition-colors">
+                        {song.title}
+                      </h4>
+                      <p className="text-[10px] text-natural-text/50 font-medium uppercase mt-0.5 tracking-wider">
+                        Por {song.artist}
+                      </p>
+                    </div>
+                    <span className="text-[10px] font-bold text-natural-sage uppercase tracking-wider group-hover:underline">
+                      + Adicionar
+                    </span>
+                  </button>
+                ))
+              )}
+            </div>
+            
+            <div className="p-3 border-t border-natural-border bg-natural-bg/30 text-center">
+              <p className="text-[10px] text-natural-text/40 font-semibold">
+                Dica: Se a música não estiver aqui, cadastre-a na aba Biblioteca.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Custom Confirmation Modal */}
+      {confirmDialog.isOpen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm animate-fade-in">
+          <div className="bg-white border border-natural-border w-full max-w-sm p-6 rounded-2xl shadow-2xl relative animate-scale-in">
+            <h3 className="text-lg font-serif italic font-bold text-natural-text mb-2">
+              {confirmDialog.title}
+            </h3>
+            <p className="text-xs text-natural-text/70 mb-6 leading-relaxed">
+              {confirmDialog.message}
+            </p>
+            <div className="flex items-center justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setConfirmDialog(prev => ({ ...prev, isOpen: false }))}
+                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 border border-slate-200 rounded-xl text-xs font-medium text-slate-700 transition cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={async () => {
+                  try {
+                    await confirmDialog.onConfirm();
+                  } catch (err) {
+                    console.error("Erro na confirmação:", err);
+                  } finally {
+                    setConfirmDialog(prev => ({ ...prev, isOpen: false }));
+                  }
+                }}
+                className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-xl text-xs font-semibold transition cursor-pointer shadow-sm shadow-red-600/10"
+              >
+                Confirmar
+              </button>
+            </div>
           </div>
         </div>
       )}

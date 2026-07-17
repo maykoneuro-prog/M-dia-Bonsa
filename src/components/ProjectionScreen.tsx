@@ -245,10 +245,10 @@ export default function ProjectionScreen({ room, onDisconnect }: ProjectionScree
             </div>
           </div>
         ) : room.activeAnnouncementType === "pre-service" && currentPreService ? (
-          // COOL & YOUNG PRE-SERVICE YOUTH SLIDESHOW / LOOP
+          // COOL & YOUNG PRE-SERVICE YOUTH SLIDESHOW / LOOP WITH OPTIONAL IMAGE SUPPORT
           <div 
             key={`pre-${localPreServiceIndex}`} 
-            className="animate-fade-in flex flex-col items-center space-y-8 md:space-y-12 max-w-4xl"
+            className="animate-fade-in flex flex-col items-center space-y-6 md:space-y-8 max-w-5xl w-full px-4"
           >
             {/* Young visual header badge */}
             <div className="flex items-center space-x-3 px-4 py-2 rounded-full bg-white/5 border border-white/10 backdrop-blur-md shadow-inner">
@@ -258,30 +258,49 @@ export default function ProjectionScreen({ room, onDisconnect }: ProjectionScree
               </span>
             </div>
 
-            {/* Glowing Icon Container */}
-            <div className="p-6 bg-white/5 rounded-3xl border border-white/10 shadow-lg backdrop-blur-lg">
-              {getPreServiceIcon(currentPreService.title)}
-            </div>
+            <div className={`flex flex-col md:flex-row items-center gap-8 md:gap-12 w-full ${currentPreService.imageUrl ? "md:text-left justify-center" : "text-center justify-center"}`}>
+              {currentPreService.imageUrl && (
+                <div className="w-full md:w-1/2 max-w-md flex justify-center">
+                  <img 
+                    src={currentPreService.imageUrl} 
+                    alt={currentPreService.title}
+                    referrerPolicy="no-referrer"
+                    className="w-full h-auto max-h-[300px] sm:max-h-[350px] md:max-h-[400px] object-cover rounded-2xl border border-white/20 shadow-2xl animate-scale-in"
+                    onError={(e) => {
+                      (e.currentTarget as HTMLElement).style.display = 'none';
+                    }}
+                  />
+                </div>
+              )}
+              
+              <div className={`flex flex-col space-y-4 md:space-y-6 ${currentPreService.imageUrl ? "w-full md:w-1/2 animate-slide-in" : "w-full items-center"}`}>
+                {!currentPreService.imageUrl && (
+                  /* Glowing Icon Container */
+                  <div className="p-5 bg-white/5 rounded-3xl border border-white/10 shadow-lg backdrop-blur-lg mb-2">
+                    {getPreServiceIcon(currentPreService.title)}
+                  </div>
+                )}
 
-            {/* Cool text lines */}
-            <div className="space-y-4 md:space-y-6">
-              <h2 className="text-sm font-mono tracking-widest text-cyan-300 uppercase font-bold">
-                {currentPreService.title}
-              </h2>
-              {currentPreService.lines.map((line, idx) => (
-                <p 
-                  key={idx}
-                  className={`text-2xl sm:text-3xl md:text-4xl lg:text-5xl font-sans font-extrabold leading-tight tracking-tight drop-shadow-[0_4px_12px_rgba(0,0,0,0.5)] ${
-                    idx === 0 ? "text-white" : "text-slate-300"
-                  }`}
-                >
-                  {line}
-                </p>
-              ))}
+                <h2 className={`text-sm font-mono tracking-widest text-cyan-300 uppercase font-bold ${currentPreService.imageUrl ? "" : "text-center"}`}>
+                  {currentPreService.title}
+                </h2>
+                <div className="space-y-3">
+                  {currentPreService.lines.map((line, idx) => (
+                    <p 
+                      key={idx}
+                      className={`text-xl sm:text-2xl md:text-3xl lg:text-4xl font-sans font-extrabold leading-tight tracking-tight drop-shadow-[0_4px_12px_rgba(0,0,0,0.5)] ${
+                        idx === 0 ? "text-white" : "text-slate-300"
+                      } ${currentPreService.imageUrl ? "" : "text-center"}`}
+                    >
+                      {line}
+                    </p>
+                  ))}
+                </div>
+              </div>
             </div>
 
             {/* Loop indicator bar */}
-            <div className="flex space-x-1.5 pt-4">
+            <div className="flex space-x-1.5 pt-2">
               {preServices.map((_, i) => (
                 <div 
                   key={i} 
@@ -293,33 +312,51 @@ export default function ProjectionScreen({ room, onDisconnect }: ProjectionScree
             </div>
           </div>
         ) : room.activeAnnouncementType === "post-service" && currentPostService ? (
-          // ELEGANT END-OF-SERVICE ANNOUNCEMENTS SLIDESHOW
+          // ELEGANT END-OF-SERVICE ANNOUNCEMENTS SLIDESHOW WITH OPTIONAL IMAGE SUPPORT
           <div 
             key={`post-${room.activeAnnouncementIndex}`} 
-            className="animate-fade-in space-y-8 max-w-4xl"
+            className="animate-fade-in flex flex-col items-center space-y-6 md:space-y-8 max-w-5xl w-full px-4"
           >
             <div className="inline-block px-4 py-1.5 rounded-full bg-[#E5DCC6]/10 border border-[#E5DCC6]/20 text-natural-sage/90 text-xs font-mono uppercase tracking-widest font-bold">
               📢 Avisos Importantes
             </div>
 
-            <h2 className="text-4xl sm:text-5xl md:text-6xl font-serif font-bold italic tracking-wide text-natural-sage">
-              {currentPostService.title}
-            </h2>
+            <div className={`flex flex-col md:flex-row items-center gap-8 md:gap-12 w-full ${currentPostService.imageUrl ? "md:text-left justify-center" : "text-center justify-center"}`}>
+              {currentPostService.imageUrl && (
+                <div className="w-full md:w-1/2 max-w-md flex justify-center">
+                  <img 
+                    src={currentPostService.imageUrl} 
+                    alt={currentPostService.title}
+                    referrerPolicy="no-referrer"
+                    className="w-full h-auto max-h-[300px] sm:max-h-[350px] md:max-h-[400px] object-cover rounded-2xl border border-natural-border/30 shadow-2xl animate-scale-in"
+                    onError={(e) => {
+                      (e.currentTarget as HTMLElement).style.display = 'none';
+                    }}
+                  />
+                </div>
+              )}
 
-            <div className="space-y-4 md:space-y-6 pt-4">
-              {currentPostService.lines.map((line, idx) => (
-                <p 
-                  key={idx} 
-                  className={`text-2xl sm:text-3xl md:text-4xl lg:text-5xl font-serif italic drop-shadow-sm leading-relaxed ${
-                    idx === 0 ? "text-[#FDFBF7] font-semibold" : "text-[#F9F7F2]/80"
-                  }`}
-                >
-                  {line}
-                </p>
-              ))}
+              <div className={`flex flex-col space-y-4 ${currentPostService.imageUrl ? "w-full md:w-1/2" : "w-full items-center"}`}>
+                <h2 className={`text-3xl sm:text-4xl md:text-5xl font-serif font-bold italic tracking-wide text-natural-sage ${currentPostService.imageUrl ? "" : "text-center"}`}>
+                  {currentPostService.title}
+                </h2>
+
+                <div className="space-y-3 pt-2">
+                  {currentPostService.lines.map((line, idx) => (
+                    <p 
+                      key={idx} 
+                      className={`text-xl sm:text-2xl md:text-3xl font-serif italic drop-shadow-sm leading-relaxed ${
+                        idx === 0 ? "text-[#FDFBF7] font-semibold" : "text-[#F9F7F2]/80"
+                      } ${currentPostService.imageUrl ? "" : "text-center"}`}
+                    >
+                      {line}
+                    </p>
+                  ))}
+                </div>
+              </div>
             </div>
 
-            <div className="text-[10px] font-mono tracking-widest text-natural-sage/50 uppercase pt-6">
+            <div className="text-[10px] font-mono tracking-widest text-natural-sage/50 uppercase pt-4">
               Aviso { (room.activeAnnouncementIndex ?? 0) + 1 } de { postServices.length }
             </div>
           </div>

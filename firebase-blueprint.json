@@ -43,6 +43,22 @@
         "items": { "type": "array" }
       },
       "required": ["id", "roomId", "title", "date", "isActive", "items"]
+    },
+    "Announcement": {
+      "title": "Announcement",
+      "description": "Represents an announcement or message projected before/after service",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "roomId": { "type": "string" },
+        "type": { "type": "string", "enum": ["pre-service", "post-service"] },
+        "title": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "lines": { "type": "array" },
+        "order": { "type": "number" },
+        "imageUrl": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["roomId", "type", "title", "lines", "order"]
     }
   },
   "firestore": {
@@ -57,6 +73,10 @@
     "services/{serviceId}": {
       "schema": "Service",
       "description": "Liturgical worship service plans and schedules"
+    },
+    "announcements/{announcementId}": {
+      "schema": "Announcement",
+      "description": "Church announcements or multimedia loop slides"
     }
   }
 }

@@ -150,6 +150,31 @@ export async function addSongToLibrary(song: Omit<Song, "id">): Promise<string> 
   }
 }
 
+// Delete song from Firestore library
+export async function deleteSongFromLibrary(songId: string): Promise<void> {
+  const songDocRef = doc(db, "songs", songId);
+  try {
+    await deleteDoc(songDocRef);
+  } catch (error) {
+    handleFirestoreError(error, OperationType.DELETE, `songs/${songId}`);
+    throw error;
+  }
+}
+
+// Update song in Firestore library
+export async function updateSongInLibrary(songId: string, song: Partial<Omit<Song, "id">>): Promise<void> {
+  const songDocRef = doc(db, "songs", songId);
+  try {
+    await updateDoc(songDocRef, {
+      ...song,
+      updatedAt: serverTimestamp()
+    });
+  } catch (error) {
+    handleFirestoreError(error, OperationType.UPDATE, `songs/${songId}`);
+    throw error;
+  }
+}
+
 // Create or update room session state
 export async function initOrCreateRoom(roomId: string, name: string): Promise<void> {
   const roomDocRef = doc(db, "rooms", roomId.toUpperCase());
@@ -361,7 +386,8 @@ export function listenToAnnouncements(roomId: string, callback: (announcements: 
         type: data.type || "pre-service",
         title: data.title || "Aviso",
         lines: data.lines || [],
-        order: data.order ?? 0
+        order: data.order ?? 0,
+        imageUrl: data.imageUrl || ""
       });
     });
     // Sort by order ascending
